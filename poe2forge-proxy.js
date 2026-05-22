@@ -24,7 +24,7 @@ try {
 // ── CONFIG ──────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 const POESESSID = process.env.POESESSID || '';
-const USER_AGENT = 'POE2Forge/2.1 BuildOptimizer (contact: your@email.com)';
+const USER_AGENT = 'POE2Forge/2.1 BuildOptimizer (contact: cboyd421@gmail.com)';
 const GGG_HOST = 'www.pathofexile.com';
 
 // Rate limiting — GGG enforces strict limits
