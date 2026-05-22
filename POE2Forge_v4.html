@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POE2 FORGE — Build Optimizer</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --void: #020108;
+  --deep: #060412;
+  --surface: #0c0a1c;
+  --panel: #100e26;
+  --panel2: #14122e;
+  --border: #1c1836;
+  --border-hi: #2a2558;
+  --blue: #1a8fff;
+  --blue-dim: #0a3060;
+  --blue-glow: rgba(26,143,255,0.12);
+  --blue-glow2: rgba(26,143,255,0.06);
+  --violet: #7b2fff;
+  --violet-glow: rgba(123,47,255,0.1);
+  --gold: #ffd600;
+  --gold-dim: rgba(255,214,0,0.08);
+  --red: #ff2d4a;
+  --red-glow: rgba(255,45,74,0.1);
+  --orange: #ff8c20;
+  --green: #00e676;
+  --green-glow: rgba(0,230,118,0.1);
+  --text: #e8dcc8;
+  --text-dim: #9a8a6a;
+  --text-muted: #3e3828;
+  --rare: #ffe020;
+  --magic: #6090ff;
+  --unique: #ff8c20;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--void);
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 70% 40% at 15% 15%, rgba(26,143,255,0.035) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 35% at 85% 85%, rgba(123,47,255,0.03) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent, transparent 48px, rgba(255,255,255,0.006) 48px, rgba(255,255,255,0.006) 49px),
+    repeating-linear-gradient(90deg, transparent, transparent 48px, rgba(255,255,255,0.006) 48px, rgba(255,255,255,0.006) 49px);
+  pointer-events: none; z-index: 0;
+}
+
+#app { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100vh; }
+
+/* ── HEADER ── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(6,4,18,0.95);
+  backdrop-filter: blur(16px);
+  flex-shrink: 0;
+  z-index: 100;
+}
+
+.logo {
+  font-family: 'Orbitron', monospace; font-size: 20px; font-weight: 900;
+  letter-spacing: 5px; color: var(--blue);
+  text-shadow: 0 0 24px rgba(26,143,255,0.4);
+}
+.logo em { color: var(--gold); font-style: normal; }
+
+.header-center {
+  display: flex; align-items: center; gap: 10px;
+}
+
+.header-right { display: flex; align-items: center; gap: 12px; }
+
+.pill {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  padding: 3px 10px; letter-spacing: 1px;
+  border: 1px solid; border-radius: 1px;
+}
+.pill-blue { color: var(--blue); border-color: rgba(26,143,255,0.3); background: var(--blue-glow2); }
+.pill-gold { color: var(--gold); border-color: rgba(255,214,0,0.25); background: var(--gold-dim); }
+.pill-green { color: var(--green); border-color: rgba(0,230,118,0.25); background: var(--green-glow); }
+.pill-red { color: var(--red); border-color: rgba(255,45,74,0.3); background: var(--red-glow); }
+
+.dot { width:7px; height:7px; border-radius:50%; transition: all 0.3s; }
+.dot-on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot-off { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.dot-wait { background: var(--text-muted); }
+
+/* ── BODY ── */
+.body {
+  display: grid;
+  grid-template-columns: 280px 340px 1fr;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── PANELS ── */
+.panel {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hi) transparent;
+}
+.panel:last-child { border-right: none; }
+
+.panel-head {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  letter-spacing: 3px; color: var(--text-muted);
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(6,4,18,0.6);
+  position: sticky; top: 0; z-index: 10;
+  text-transform: uppercase;
+}
+
+.section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+
+/* ── CHARACTER ── */
+.char-header { margin-bottom: 12px; }
+.char-name { font-size: 17px; font-weight: 700; letter-spacing: 1px; }
+.char-class {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  color: var(--blue); letter-spacing: 2px; margin-top: 2px;
+}
+
+.kv-row {
+  display: flex; justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 13px;
+}
+.kv-label { color: var(--text-dim); }
+.kv-val { font-family: 'Share Tech Mono', monospace; font-weight: 600; }
+.kv-val.bad { color: var(--red); }
+.kv-val.warn { color: var(--orange); }
+.kv-val.ok { color: var(--green); }
+
+/* ── RESISTANCES ── */
+.res-rows { display: flex; flex-direction: column; gap: 6px; }
+
+.res-row {
+  display: grid; grid-template-columns: 60px 1fr 48px;
+  align-items: center; gap: 8px;
+}
+.res-name { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
+.res-bar-track {
+  height: 4px; background: rgba(255,255,255,0.05);
+  border-radius: 2px; overflow: hidden;
+}
+.res-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+.res-pct {
+  font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  font-weight: 700; text-align: right;
+}
+.res-pct.neg { color: var(--red); }
+.res-pct.low { color: var(--orange); }
+.res-pct.ok { color: var(--green); }
+
+/* ── FOCUS SLIDERS ── */
+.slider-rows { display: flex; flex-direction: column; gap: 10px; }
+
+.slider-row { }
+.slider-meta {
+  display: flex; justify-content: space-between;
+  margin-bottom: 5px;
+}
+.slider-label { font-size: 12px; color: var(--text-dim); letter-spacing: 1px; }
+.slider-val {
+  font-family: 'Share Tech Mono', monospace; font-size: 11px;
+  color: var(--blue);
+}
+
+input[type=range] {
+  -webkit-appearance: none; width: 100%; height: 3px;
+  background: var(--border-hi); border-radius: 2px; outline: none; cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--blue);
+  box-shadow: 0 0 6px rgba(26,143,255,0.6); cursor: pointer;
+}
+
+/* ── FILTERS ── */
+.filter-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; font-size: 13px;
+}
+.filter-label { color: var(--text-dim); }
+
+.toggle {
+  width: 32px; height: 16px; border-radius: 8px;
+  background: var(--border-hi); cursor: pointer;
+  position: relative; transition: background 0.2s;
+  border: none; outline: none;
+}
+.toggle.on { background: var(--blue); }
+.toggle::after {
+  content: ''; position: absolute;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: white; top: 3px; left: 3px;
+  transition: transform 0.2s;
+}
+.toggle.on::after { transform: translateX(16px); }
+
+.filter-select {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; padding: 3px 6px; outline: none; cursor: pointer;
+}
+
+.budget-input {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; padding: 3px 8px; width: 80px; outline: none;
+}
+.budget-input:focus { border-color: var(--blue); }
+
+/* ── GEAR SLOTS ── */
+.slot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+
+.slot-btn {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 8px 10px; cursor: pointer; transition: all 0.15s;
+  text-align: left; position: relative; overflow: hidden;
+}
+.slot-btn:hover { border-color: var(--border-hi); }
+.slot-btn.active { border-color: var(--blue); background: var(--blue-glow); }
+.slot-btn.loading { border-color: var(--violet); animation: breathe 1.4s ease-in-out infinite; }
+.slot-btn.done { border-color: var(--border-hi); }
+
+@keyframes breathe { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+.slot-name { font-size: 11px; letter-spacing: 1px; color: var(--text-dim); display: block; }
+.slot-count {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  color: var(--blue); display: block; margin-top: 2px;
+}
+
+.scan-btn {
+  width: 100%; padding: 9px;
+  background: rgba(26,143,255,0.08); border: 1px solid var(--blue-dim);
+  color: var(--blue); font-family: 'Orbitron', monospace;
+  font-size: 10px; letter-spacing: 3px; cursor: pointer;
+  transition: all 0.2s; text-transform: uppercase; margin-top: 8px;
+}
+.scan-btn:hover { background: rgba(26,143,255,0.18); border-color: var(--blue); box-shadow: 0 0 14px rgba(26,143,255,0.15); }
+.scan-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── MIDDLE PANEL — RESULTS LIST ── */
+.sort-bar {
+  display: flex; gap: 4px; padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(6,4,18,0.5);
+  position: sticky; top: 36px; z-index: 9;
+}
+
+.sort-chip {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  padding: 3px 9px; border: 1px solid var(--border);
+  color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+}
+.sort-chip:hover { color: var(--text-dim); border-color: var(--border-hi); }
+.sort-chip.active { color: var(--blue); border-color: rgba(26,143,255,0.4); background: var(--blue-glow2); }
+
+.results-list { display: flex; flex-direction: column; }
+
+.result-card {
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background 0.12s;
+  position: relative;
+}
+.result-card:hover { background: rgba(255,255,255,0.02); }
+.result-card.selected { background: var(--blue-glow2); border-left: 2px solid var(--blue); padding-left: 12px; }
+
+.rc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
+.rc-name { font-size: 14px; font-weight: 700; }
+.rc-name.rare { color: var(--rare); }
+.rc-name.magic { color: var(--magic); }
+.rc-name.unique { color: var(--unique); }
+.rc-name.normal { color: #c8c8c8; }
+
+.rc-price {
+  font-family: 'Orbitron', monospace; font-size: 12px;
+  font-weight: 700; color: var(--gold); white-space: nowrap; margin-left: 6px;
+}
+
+.rc-type { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-family: 'Share Tech Mono', monospace; }
+
+.rc-score-bar { display: flex; gap: 4px; margin-bottom: 7px; align-items: center; }
+.score-seg {
+  height: 3px; border-radius: 1px; flex: 1; background: var(--border);
+  position: relative; overflow: hidden;
+}
+.score-seg-fill { height: 100%; border-radius: 1px; transition: width 0.4s ease; }
+
+.rc-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 5px; }
+.tag {
+  font-size: 9px; padding: 2px 6px; border-radius: 1px;
+  letter-spacing: 0.5px; font-family: 'Share Tech Mono', monospace;
+}
+.tag-instant { background: var(--green-glow); color: var(--green); border: 1px solid rgba(0,230,118,0.25); }
+.tag-online { background: rgba(0,230,118,0.06); color: #5a9e78; border: 1px solid rgba(0,230,118,0.15); }
+.tag-afk { background: rgba(255,140,32,0.1); color: var(--orange); border: 1px solid rgba(255,140,32,0.2); }
+.tag-offline { background: rgba(62,56,40,0.3); color: var(--text-muted); border: 1px solid var(--border); }
+.tag-score { background: var(--blue-glow); color: var(--blue); border: 1px solid rgba(26,143,255,0.2); }
+.tag-slot { background: var(--violet-glow); color: #a07fff; border: 1px solid rgba(123,47,255,0.2); }
+
+.rc-key-mods { display: flex; flex-direction: column; gap: 2px; }
+.rc-mod { font-size: 11px; color: var(--magic); }
+.rc-mod.hi { color: var(--green); font-weight: 600; }
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 50px 20px; gap: 10px; color: var(--text-muted); text-align: center;
+}
+.empty-icon { font-size: 36px; opacity: 0.2; }
+.empty-title { font-family: 'Orbitron', monospace; font-size: 11px; letter-spacing: 2px; }
+
+.loading-shimmer {
+  display: flex; flex-direction: column; gap: 1px;
+}
+.shimmer-card { height: 90px; background: var(--panel); border-bottom: 1px solid var(--border); animation: shimmer 1.4s ease-in-out infinite; }
+@keyframes shimmer { 0%,100%{opacity:0.5} 50%{opacity:1} }
+
+/* ── RIGHT PANEL — ITEM DETAIL ── */
+.detail-panel { padding: 18px 20px; }
+
+.detail-empty {
+  height: 100%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px; color: var(--text-muted); text-align: center;
+}
+.detail-empty-hex { font-size: 64px; opacity: 0.06; line-height: 1; }
+.detail-empty-title { font-family: 'Orbitron', monospace; font-size: 11px; letter-spacing: 2px; }
+
+.detail-name { font-size: 22px; font-weight: 700; margin-bottom: 2px; }
+.detail-name.rare { color: var(--rare); }
+.detail-name.magic { color: var(--magic); }
+.detail-name.unique { color: var(--unique); }
+.detail-name.normal { color: #c8c8c8; }
+
+.detail-type { font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
+
+.score-breakdown { margin-bottom: 16px; }
+.score-title { font-family: 'Orbitron', monospace; font-size: 9px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 8px; }
+.score-rows { display: flex; flex-direction: column; gap: 6px; }
+.score-row {
+  display: grid; grid-template-columns: 90px 1fr 36px; gap: 8px; align-items: center;
+}
+.score-row-label { font-size: 11px; color: var(--text-dim); }
+.score-row-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.score-row-fill { height: 100%; border-radius: 2px; }
+.score-row-val { font-family: 'Share Tech Mono', monospace; font-size: 11px; text-align: right; }
+
+.detail-divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+
+.mods-title { font-family: 'Orbitron', monospace; font-size: 9px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 8px; }
+.mod-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.detail-mod { font-size: 13px; color: var(--magic); padding: 2px 0; }
+.detail-mod.hi { color: var(--green); font-weight: 600; }
+.detail-mod.hi::before { content: '▲ '; font-size: 10px; }
+
+.delta-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 16px; }
+.delta-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 10px; background: var(--surface); border: 1px solid var(--border);
+  font-size: 12px;
+}
+.delta-label { color: var(--text-dim); }
+.delta-val { font-family: 'Share Tech Mono', monospace; font-weight: 600; }
+.delta-val.pos { color: var(--green); }
+.delta-val.neg { color: var(--red); }
+
+.action-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.action-btn {
+  flex: 1; padding: 10px;
+  font-family: 'Orbitron', monospace; font-size: 10px; letter-spacing: 2px;
+  cursor: pointer; transition: all 0.2s; text-transform: uppercase; border: 1px solid;
+}
+.btn-whisper {
+  background: var(--green-glow); border-color: rgba(0,230,118,0.3);
+  color: var(--green);
+}
+.btn-whisper:hover { background: rgba(0,230,118,0.18); }
+.btn-instant {
+  background: rgba(255,214,0,0.08); border-color: rgba(255,214,0,0.3);
+  color: var(--gold);
+}
+.btn-instant:hover { background: rgba(255,214,0,0.16); }
+.btn-trade {
+  background: var(--blue-glow); border-color: rgba(26,143,255,0.3);
+  color: var(--blue);
+}
+.btn-trade:hover { background: rgba(26,143,255,0.2); }
+
+.trade-steps {
+  background: var(--surface); border: 1px solid var(--border); padding: 12px 14px;
+}
+.trade-steps-title { font-family: 'Orbitron', monospace; font-size: 9px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 10px; }
+.trade-step { display: flex; gap: 10px; margin-bottom: 8px; font-size: 12px; align-items: flex-start; }
+.step-num {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  color: var(--blue); border: 1px solid rgba(26,143,255,0.3);
+  width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+}
+.step-text { color: var(--text-dim); line-height: 1.4; }
+.step-text strong { color: var(--text); }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  padding: 10px 16px; font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  border: 1px solid; z-index: 999; opacity: 0; transform: translateY(8px);
+  transition: all 0.25s; pointer-events: none; max-width: 280px;
+  background: var(--panel);
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.ok { color: var(--green); border-color: rgba(0,230,118,0.35); }
+.toast.err { color: var(--red); border-color: rgba(255,45,74,0.35); }
+.toast.info { color: var(--blue); border-color: rgba(26,143,255,0.35); }
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- HEADER -->
+<header>
+  <div class="logo">POE2 <em>FORGE</em></div>
+  <div class="header-center">
+    <div class="dot dot-wait" id="proxy-dot"></div>
+    <span class="pill pill-gold" id="league-badge">CONNECTING...</span>
+  </div>
+  <div class="header-right">
+    <span class="pill pill-blue" id="rate-badge">12 req/min</span>
+  </div>
+</header>
+
+<!-- BODY -->
+<div class="body">
+
+<!-- ══ LEFT PANEL — CHARACTER + CONTROLS ══ -->
+<div class="panel">
+  <div class="panel-head">Character & Focus</div>
+
+  <!-- Character -->
+  <div class="section">
+    <div class="char-header">
+      <div class="char-name">Druid Oracle</div>
+      <div class="char-class">LEVEL 94 · FATE OF THE VAAL</div>
+    </div>
+    <div class="kv-row"><span class="kv-label">Life</span><span class="kv-val warn">1,253</span></div>
+    <div class="kv-row"><span class="kv-label">Energy Shield</span><span class="kv-val">249</span></div>
+    <div class="kv-row"><span class="kv-label">Mana</span><span class="kv-val">786</span></div>
+    <div class="kv-row"><span class="kv-label">Armour</span><span class="kv-val bad">0</span></div>
+    <div class="kv-row"><span class="kv-label">Evasion</span><span class="kv-val">8</span></div>
+  </div>
+
+  <!-- Resistances -->
+  <div class="section">
+    <div style="font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;color:var(--text-muted);margin-bottom:10px;">RESISTANCES</div>
+    <div class="res-rows">
+      <div class="res-row">
+        <span class="res-name">FIRE</span>
+        <div class="res-bar-track"><div class="res-bar-fill" id="bar-fire" style="width:0%;background:#ff4444"></div></div>
+        <span class="res-pct neg" id="rval-fire">−55%</span>
+      </div>
+      <div class="res-row">
+        <span class="res-name">COLD</span>
+        <div class="res-bar-track"><div class="res-bar-fill" id="bar-cold" style="width:0%;background:#44aaff"></div></div>
+        <span class="res-pct neg" id="rval-cold">−55%</span>
+      </div>
+      <div class="res-row">
+        <span class="res-name">LIGHTNING</span>
+        <div class="res-bar-track"><div class="res-bar-fill" id="bar-light" style="width:0%;background:#ffcc00"></div></div>
+        <span class="res-pct neg" id="rval-light">−55%</span>
+      </div>
+      <div class="res-row">
+        <span class="res-name">CHAOS</span>
+        <div class="res-bar-track"><div class="res-bar-fill" id="bar-chaos" style="width:50%;background:#9b59b6"></div></div>
+        <span class="res-pct low" id="rval-chaos">0%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Priority Sliders -->
+  <div class="section">
+    <div style="font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;color:var(--text-muted);margin-bottom:12px;">UPGRADE PRIORITY</div>
+    <div class="slider-rows">
+      <div class="slider-row">
+        <div class="slider-meta">
+          <span class="slider-label">RESISTANCE</span>
+          <span class="slider-val" id="sv-resistance">10</span>
+        </div>
+        <input type="range" min="0" max="10" value="10" id="sl-resistance" oninput="onSlider('resistance',this.value)">
+      </div>
+      <div class="slider-row">
+        <div class="slider-meta">
+          <span class="slider-label">LIFE</span>
+          <span class="slider-val" id="sv-life">8</span>
+        </div>
+        <input type="range" min="0" max="10" value="8" id="sl-life" oninput="onSlider('life',this.value)">
+      </div>
+      <div class="slider-row">
+        <div class="slider-meta">
+          <span class="slider-label">DPS</span>
+          <span class="slider-val" id="sv-dps">4</span>
+        </div>
+        <input type="range" min="0" max="10" value="4" id="sl-dps" oninput="onSlider('dps',this.value)">
+      </div>
+      <div class="slider-row">
+        <div class="slider-meta">
+          <span class="slider-label">DEFENSE</span>
+          <span class="slider-val" id="sv-defense">3</span>
+        </div>
+        <input type="range" min="0" max="10" value="3" id="sl-defense" oninput="onSlider('defense',this.value)">
+      </div>
+      <div class="slider-row">
+        <div class="slider-meta">
+          <span class="slider-label">RARITY / MF</span>
+          <span class="slider-val" id="sv-mf">1</span>
+        </div>
+        <input type="range" min="0" max="10" value="1" id="sl-mf" oninput="onSlider('mf',this.value)">
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="section">
+    <div style="font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;color:var(--text-muted);margin-bottom:10px;">FILTERS</div>
+    <div class="filter-row">
+      <span class="filter-label">Online sellers only</span>
+      <button class="toggle on" id="tog-online" onclick="toggleFilter('online')"></button>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Instant buyout only</span>
+      <button class="toggle" id="tog-instant" onclick="toggleFilter('instant')"></button>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Sort by</span>
+      <select class="filter-select" id="sel-sort" onchange="reSort()">
+        <option value="score">Best Score</option>
+        <option value="price">Cheapest</option>
+        <option value="value">Best Value</option>
+        <option value="res">Most Res</option>
+        <option value="life">Most Life</option>
+      </select>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Budget (divine)</span>
+      <input type="number" class="budget-input" id="inp-budget" placeholder="no cap" min="0">
+    </div>
+  </div>
+
+  <!-- Gear Slots -->
+  <div class="section">
+    <div style="font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;color:var(--text-muted);margin-bottom:10px;">SEARCH SLOTS</div>
+    <div class="slot-grid" id="slot-grid">
+      <button class="slot-btn" data-slot="ring" onclick="searchSlot('ring')"><span class="slot-name">RING</span><span class="slot-count" id="sc-ring">—</span></button>
+      <button class="slot-btn" data-slot="amulet" onclick="searchSlot('amulet')"><span class="slot-name">AMULET</span><span class="slot-count" id="sc-amulet">—</span></button>
+      <button class="slot-btn" data-slot="helmet" onclick="searchSlot('helmet')"><span class="slot-name">HELMET</span><span class="slot-count" id="sc-helmet">—</span></button>
+      <button class="slot-btn" data-slot="body" onclick="searchSlot('body')"><span class="slot-name">BODY</span><span class="slot-count" id="sc-body">—</span></button>
+      <button class="slot-btn" data-slot="gloves" onclick="searchSlot('gloves')"><span class="slot-name">GLOVES</span><span class="slot-count" id="sc-gloves">—</span></button>
+      <button class="slot-btn" data-slot="boots" onclick="searchSlot('boots')"><span class="slot-name">BOOTS</span><span class="slot-count" id="sc-boots">—</span></button>
+      <button class="slot-btn" data-slot="belt" onclick="searchSlot('belt')"><span class="slot-name">BELT</span><span class="slot-count" id="sc-belt">—</span></button>
+      <button class="slot-btn" data-slot="weapon" onclick="searchSlot('weapon')"><span class="slot-name">WEAPON</span><span class="slot-count" id="sc-weapon">—</span></button>
+    </div>
+    <button class="scan-btn" id="scan-btn" onclick="scanAll()">⬡ SCAN ALL UPGRADES</button>
+  </div>
+
+</div>
+
+<!-- ══ MIDDLE PANEL — RESULTS LIST ══ -->
+<div class="panel" id="results-panel">
+  <div class="panel-head" id="results-head">RESULTS</div>
+  <div class="sort-bar" id="sort-bar" style="display:none">
+    <div class="sort-chip active" data-sort="score" onclick="setSort('score',this)">SCORE</div>
+    <div class="sort-chip" data-sort="price" onclick="setSort('price',this)">PRICE</div>
+    <div class="sort-chip" data-sort="value" onclick="setSort('value',this)">VALUE</div>
+    <div class="sort-chip" data-sort="res" onclick="setSort('res',this)">RES</div>
+    <div class="sort-chip" data-sort="life" onclick="setSort('life',this)">LIFE</div>
+  </div>
+  <div id="results-list">
+    <div class="empty-state">
+      <div class="empty-icon">⬡</div>
+      <div class="empty-title">SELECT A SLOT TO SEARCH</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Or scan all upgrades</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RIGHT PANEL — ITEM DETAIL ══ -->
+<div class="panel" id="detail-panel">
+  <div class="panel-head">ITEM DETAIL</div>
+  <div class="detail-panel" id="detail-content">
+    <div class="detail-empty">
+      <div class="detail-empty-hex">⬡</div>
+      <div class="detail-empty-title">SELECT AN ITEM</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;max-width:180px;line-height:1.5">
+        Choose a result from the list to see upgrade analysis and trade options
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const PROXY = 'http://localhost:3001';
+
+const CHAR = {
+  fireRes: -55, coldRes: -55, lightRes: -55, chaosRes: 0,
+  life: 1253, es: 249, mana: 786, armour: 0, evasion: 8
+};
+
+const TARGET = { fireRes: 75, coldRes: 75, lightRes: 75, chaosRes: 0, life: 3000 };
+
+let currentLeague = 'Fate of the Vaal';
+let allResults = []; // flat array of all fetched items with slot attached
+let filteredResults = [];
+let selectedItem = null;
+let currentSort = 'score';
+let activeSlot = null;
+
+// User priorities (0-10)
+let focus = { resistance: 10, life: 8, dps: 4, defense: 3, mf: 1 };
+
+// Filters
+let filters = { onlineOnly: true, instantOnly: false };
+
+// ── UTILITIES ─────────────────────────────────────────────────────────────────
+function cleanMod(t) {
+  if (!t) return '';
+  return t.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '$2').replace(/\[([^\]]+)\]/g, '$1').trim();
+}
+
+function toast(msg, type='info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => el.className = 'toast', 3000);
+}
+
+function fmt(n) { return n >= 1000 ? n.toLocaleString() : String(n); }
+
+// ── SCORING ENGINE ────────────────────────────────────────────────────────────
+function scoreMods(mods) {
+  const raw = mods.join(' ');
+  const scores = { resistance: 0, life: 0, dps: 0, defense: 0, mf: 0 };
+
+  // Resistance scoring
+  const fireMatch   = raw.match(/\+?(\d+)%.*?Fire Resistance/i);
+  const coldMatch   = raw.match(/\+?(\d+)%.*?Cold Resistance/i);
+  const lightMatch  = raw.match(/\+?(\d+)%.*?Lightning Resistance/i);
+  const allResMatch = raw.match(/\+?(\d+)%.*?all Elemental Resist/i);
+
+  const fireRes  = parseInt(fireMatch?.[1] || 0);
+  const coldRes  = parseInt(coldMatch?.[1] || 0);
+  const lightRes = parseInt(lightMatch?.[1] || 0);
+  const allRes   = parseInt(allResMatch?.[1] || 0);
+
+  const totalRes = fireRes + coldRes + lightRes + (allRes * 3);
+  scores.resistance = Math.min(100, (totalRes / 130) * 100);
+
+  // Store raw values for delta display
+  scores._fireRes  = fireRes + allRes;
+  scores._coldRes  = coldRes + allRes;
+  scores._lightRes = lightRes + allRes;
+  scores._totalRes = totalRes;
+
+  // Life scoring
+  const lifeMatch = raw.match(/\+?(\d+) to maximum Life/i);
+  const lifeFlat  = parseInt(lifeMatch?.[1] || 0);
+  scores.life = Math.min(100, (lifeFlat / 120) * 100);
+  scores._life = lifeFlat;
+
+  // DPS scoring (spell damage, cast speed, crit)
+  const spellMatch = raw.match(/(\d+)%.*?Spell Damage/i);
+  const castMatch  = raw.match(/(\d+)%.*?Cast Speed/i);
+  const critMatch  = raw.match(/(\d+)%.*?Critical Hit Chance/i);
+  const dpsPoints  = parseInt(spellMatch?.[1] || 0) + parseInt(castMatch?.[1] || 0) * 2 + parseInt(critMatch?.[1] || 0);
+  scores.dps = Math.min(100, (dpsPoints / 60) * 100);
+
+  // Defense scoring (ES, armour, evasion)
+  const esMatch  = raw.match(/\+?(\d+) to maximum Energy Shield/i);
+  const armMatch = raw.match(/\+?(\d+) to Armour/i);
+  scores.defense = Math.min(100, ((parseInt(esMatch?.[1]||0) + parseInt(armMatch?.[1]||0) * 0.5) / 100) * 100);
+  scores._es = parseInt(esMatch?.[1] || 0);
+
+  // MF scoring
+  const mfMatch  = raw.match(/(\d+)%.*?Rarity of Items/i);
+  const qtyMatch = raw.match(/(\d+)%.*?Quantity/i);
+  scores.mf = Math.min(100, ((parseInt(mfMatch?.[1]||0) + parseInt(qtyMatch?.[1]||0)) / 50) * 100);
+
+  return scores;
+}
+
+function weightedScore(scores) {
+  const total = Object.values(focus).reduce((a, b) => a + b, 0) || 1;
+  let weighted = 0;
+  for (const [k, w] of Object.entries(focus)) {
+    weighted += (scores[k] || 0) * w;
+  }
+  return Math.round(weighted / total);
+}
+
+function scoreItem(item) {
+  const modScores = scoreMods(item.mods);
+  const ws = weightedScore(modScores);
+  const priceDiv = toDivine(item.priceAmount, item.priceCurrency);
+  const valueScore = priceDiv > 0 ? Math.round(ws / priceDiv * 10) : ws;
+  return { ...modScores, weighted: ws, valueScore, priceDiv };
+}
+
+function toDivine(amount, currency) {
+  if (!amount) return 999;
+  const rates = { divine: 1, exalted: 0.05, chaos: 0.005, 'exalted orb': 0.05, 'divine orb': 1 };
+  const rate = rates[(currency||'').toLowerCase()] || 0.005;
+  return Math.max(0.01, amount * rate);
+}
+
+// ── SORT & FILTER ─────────────────────────────────────────────────────────────
+function applyFiltersAndSort() {
+  let items = [...allResults];
+
+  // Online filter
+  if (filters.onlineOnly) items = items.filter(i => i.online || i.afk);
+
+  // Instant buyout filter
+  if (filters.instantOnly) items = items.filter(i => i.isInstantBuy);
+
+  // Budget filter
+  const budget = parseFloat(document.getElementById('inp-budget').value);
+  if (budget > 0) items = items.filter(i => toDivine(i.priceAmount, i.priceCurrency) <= budget);
+
+  // Score all items
+  items = items.map(i => ({ ...i, _scores: scoreItem(i) }));
+
+  // Sort
+  const sortKey = document.getElementById('sel-sort').value;
+  items.sort((a, b) => {
+    switch(sortKey) {
+      case 'price': return toDivine(a.priceAmount, a.priceCurrency) - toDivine(b.priceAmount, b.priceCurrency);
+      case 'value': return b._scores.valueScore - a._scores.valueScore;
+      case 'res':   return b._scores._totalRes - a._scores._totalRes;
+      case 'life':  return b._scores._life - a._scores._life;
+      default:      return b._scores.weighted - a._scores.weighted;
+    }
+  });
+
+  filteredResults = items;
+  renderList();
+}
+
+function onSlider(key, val) {
+  focus[key] = parseInt(val);
+  document.getElementById(`sv-${key}`).textContent = val;
+  applyFiltersAndSort();
+}
+
+function toggleFilter(key) {
+  filters[key + 'Only'] = !filters[key + 'Only'];
+  const btn = document.getElementById(`tog-${key}`);
+  btn.classList.toggle('on', filters[key + 'Only']);
+  applyFiltersAndSort();
+}
+
+function reSort() { applyFiltersAndSort(); }
+function setSort(key, el) {
+  document.querySelectorAll('.sort-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('sel-sort').value = key;
+  applyFiltersAndSort();
+}
+
+// ── RENDER LIST ───────────────────────────────────────────────────────────────
+function renderList() {
+  const container = document.getElementById('results-list');
+  document.getElementById('sort-bar').style.display = filteredResults.length ? '' : 'none';
+
+  if (!filteredResults.length) {
+    container.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">◇</div>
+      <div class="empty-title">NO RESULTS</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Try adjusting filters or searching a slot</div>
+    </div>`;
+    return;
+  }
+
+  const html = filteredResults.map((item, idx) => renderCard(item, idx)).join('');
+  container.innerHTML = html;
+}
+
+function renderCard(item, idx) {
+  const sc = item._scores;
+  const isSelected = selectedItem?.id === item.id;
+
+  const statusTag = item.isInstantBuy
+    ? '<span class="tag tag-instant">INSTANT BUY</span>'
+    : item.online
+      ? item.afk
+        ? '<span class="tag tag-afk">AFK</span>'
+        : '<span class="tag tag-online">ONLINE</span>'
+      : '<span class="tag tag-offline">OFFLINE</span>';
+
+  const slotTag = item._slot ? `<span class="tag tag-slot">${item._slot.toUpperCase()}</span>` : '';
+  const scoreTag = `<span class="tag tag-score">SCORE ${sc.weighted}</span>`;
+
+  // Score bar segments
+  const segs = [
+    { key:'resistance', color:'#ff6666', label:'Res' },
+    { key:'life', color:'#44cc88', label:'Life' },
+    { key:'dps', color:'#6699ff', label:'DPS' },
+    { key:'defense', color:'#cc88ff', label:'Def' },
+    { key:'mf', color:'#ffcc44', label:'MF' },
+  ].map(s => `
+    <div class="score-seg" title="${s.label}: ${Math.round(sc[s.key])}">
+      <div class="score-seg-fill" style="width:${sc[s.key]}%;background:${s.color}"></div>
+    </div>`).join('');
+
+  // Key mods (highlight res and life)
+  const keyMods = item.mods.slice(0, 4).map(m => {
+    const hi = /resist|maximum Life|energy shield/i.test(m);
+    return `<div class="rc-mod${hi?' hi':''}">${cleanMod(m)}</div>`;
+  }).join('');
+
+  return `<div class="result-card${isSelected?' selected':''}" onclick="selectItem(${idx})">
+    <div class="rc-top">
+      <div class="rc-name ${item.rarity}">${item.name || item.typeLine}</div>
+      <div class="rc-price">${item.price}</div>
+    </div>
+    <div class="rc-type">${item.typeLine || ''} · ilvl ${item.ilvl || '?'}</div>
+    <div class="rc-score-bar">${segs}</div>
+    <div class="rc-tags">${statusTag}${slotTag}${scoreTag}</div>
+    <div class="rc-key-mods">${keyMods}</div>
+  </div>`;
+}
+
+// ── ITEM DETAIL ───────────────────────────────────────────────────────────────
+function selectItem(idx) {
+  selectedItem = filteredResults[idx];
+  renderList(); // re-render to update selected state
+  renderDetail(selectedItem);
+}
+
+function renderDetail(item) {
+  const sc = item._scores;
+  const container = document.getElementById('detail-content');
+
+  // Score breakdown
+  const scoreRows = [
+    { label: 'Resistance', key: 'resistance', color: '#ff6666' },
+    { label: 'Life', key: 'life', color: '#44cc88' },
+    { label: 'DPS', key: 'dps', color: '#6699ff' },
+    { label: 'Defense', key: 'defense', color: '#cc88ff' },
+    { label: 'Rarity/MF', key: 'mf', color: '#ffcc44' },
+  ].map(r => `
+    <div class="score-row">
+      <span class="score-row-label">${r.label}</span>
+      <div class="score-row-bar"><div class="score-row-fill" style="width:${sc[r.key]}%;background:${r.color}"></div></div>
+      <span class="score-row-val" style="color:${r.color}">${Math.round(sc[r.key])}</span>
+    </div>`).join('');
+
+  // Upgrade deltas vs current character
+  const deltas = [];
+  if (sc._fireRes > 0)  deltas.push({ label: 'Fire Res', cur: CHAR.fireRes, gain: sc._fireRes, unit: '%' });
+  if (sc._coldRes > 0)  deltas.push({ label: 'Cold Res', cur: CHAR.coldRes, gain: sc._coldRes, unit: '%' });
+  if (sc._lightRes > 0) deltas.push({ label: 'Light Res', cur: CHAR.lightRes, gain: sc._lightRes, unit: '%' });
+  if (sc._life > 0)     deltas.push({ label: 'Max Life', cur: CHAR.life, gain: sc._life, unit: '' });
+  if (sc._es > 0)       deltas.push({ label: 'Energy Shield', cur: CHAR.es, gain: sc._es, unit: '' });
+
+  const deltaHtml = deltas.length ? deltas.map(d => {
+    const newVal = d.cur + d.gain;
+    const hitsCap = d.label.includes('Res') && newVal >= 75;
+    return `<div class="delta-item">
+      <span class="delta-label">${d.label}</span>
+      <span class="delta-val pos">
+        ${d.cur < 0 ? d.cur : '+' + d.cur}${d.unit} → ${newVal}${d.unit}
+        ${hitsCap ? ' ✓ CAPPED' : ''}
+      </span>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">No tracked stat improvements detected</div>';
+
+  // All mods
+  const modHtml = item.mods.map(m => {
+    const hi = /resist|maximum Life|energy shield/i.test(m);
+    return `<div class="detail-mod${hi?' hi':''}">${cleanMod(m)}</div>`;
+  }).join('');
+
+  // Trade buttons
+  const whisperBtn = item.whisper
+    ? `<button class="action-btn btn-whisper" onclick="copyWhisper()">📋 COPY WHISPER</button>`
+    : '';
+  const instantBtn = item.isInstantBuy
+    ? `<button class="action-btn btn-instant" onclick="toast('Open in-game Market Panel and search for this item to instant buy','info')">⚡ INSTANT BUY</button>`
+    : '';
+  const tradeBtn = `<button class="action-btn btn-trade" onclick="openTrade()">↗ TRADE SITE</button>`;
+
+  // Trade flow guide
+  const isInstant = item.isInstantBuy;
+  const tradeGuide = isInstant ? `
+    <div class="trade-steps">
+      <div class="trade-steps-title">INSTANT BUY FLOW</div>
+      <div class="trade-step"><div class="step-num">1</div><div class="step-text">Press <strong>/</strong> in-game to open the Market Panel</div></div>
+      <div class="trade-step"><div class="step-num">2</div><div class="step-text">Search for the item by name or use filters</div></div>
+      <div class="trade-step"><div class="step-num">3</div><div class="step-text">Click <strong>Buy</strong> — you'll teleport to the seller's hideout automatically</div></div>
+      <div class="trade-step"><div class="step-num">4</div><div class="step-text">Ange completes the trade. Currency deducted + small gold fee</div></div>
+    </div>` : `
+    <div class="trade-steps">
+      <div class="trade-steps-title">WHISPER TRADE FLOW</div>
+      <div class="trade-step"><div class="step-num">1</div><div class="step-text">Click <strong>Copy Whisper</strong> and paste into in-game chat</div></div>
+      <div class="trade-step"><div class="step-num">2</div><div class="step-text">Wait for seller to send a <strong>party invite</strong></div></div>
+      <div class="trade-step"><div class="step-num">3</div><div class="step-text">Accept invite, then click the <strong>blue icon</strong> on their portrait to visit their hideout</div></div>
+      <div class="trade-step"><div class="step-num">4</div><div class="step-text">Trade window opens — hover each item to verify, then both accept</div></div>
+    </div>`;
+
+  container.innerHTML = `
+    <div class="detail-name ${item.rarity}">${item.name || item.typeLine}</div>
+    <div class="detail-type">${item.typeLine || ''} · ilvl ${item.ilvl || '?'} · ${item.price}</div>
+
+    <div class="score-breakdown">
+      <div class="score-title">UPGRADE SCORE BREAKDOWN</div>
+      <div class="score-rows">${scoreRows}</div>
+    </div>
+
+    <hr class="detail-divider">
+
+    <div class="mods-title">UPGRADE DELTAS VS YOUR CHARACTER</div>
+    <div class="delta-list">${deltaHtml}</div>
+
+    <div class="mods-title">ALL MODIFIERS</div>
+    <div class="mod-list">${modHtml}</div>
+
+    <hr class="detail-divider">
+
+    <div class="action-row">${whisperBtn}${instantBtn}${tradeBtn}</div>
+    ${tradeGuide}
+  `;
+}
+
+function copyWhisper() {
+  if (!selectedItem?.whisper) return;
+  navigator.clipboard.writeText(selectedItem.whisper).then(() => toast('Whisper copied — paste into in-game chat', 'ok'));
+}
+
+function openTrade() {
+  if (!selectedItem) return;
+  // Build trade URL for this item's search
+  const url = `https://www.pathofexile.com/trade2`;
+  window.open(url, '_blank');
+}
+
+// ── SEARCH ────────────────────────────────────────────────────────────────────
+async function searchSlot(slot) {
+  activeSlot = slot;
+
+  // Update slot buttons
+  document.querySelectorAll('.slot-btn').forEach(b => {
+    b.classList.remove('active', 'loading');
+    if (b.dataset.slot === slot) b.classList.add('loading');
+  });
+
+  document.getElementById('results-head').textContent = `SEARCHING ${slot.toUpperCase()}...`;
+  document.getElementById('results-list').innerHTML = `
+    <div class="loading-shimmer">
+      ${[1,2,3,4,5].map(() => '<div class="shimmer-card"></div>').join('')}
+    </div>`;
+
+  try {
+    const budget = parseFloat(document.getElementById('inp-budget').value) || null;
+    const data = await fetch(PROXY + '/smart-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        league: currentLeague,
+        slot,
+        stats: CHAR,
+        budget,
+        rarity: 'rare',
+        limit: 10,
+        focus: {
+          resistance: focus.resistance,
+          lifePool: focus.life,
+          dps: focus.dps,
+          defense: focus.defense,
+          mf: focus.mf
+        }
+      })
+    }).then(r => r.json());
+
+    // Tag items with slot
+    const tagged = (data.results || []).map(i => ({ ...i, _slot: slot }));
+
+    // Merge into allResults (replace any previous results for this slot)
+    allResults = allResults.filter(i => i._slot !== slot).concat(tagged);
+
+    const sc = document.getElementById(`sc-${slot}`);
+    if (sc) sc.textContent = data.total ? data.total + ' found' : '0';
+
+    document.querySelectorAll('.slot-btn').forEach(b => {
+      if (b.dataset.slot === slot) { b.classList.remove('loading'); b.classList.add('active'); }
+    });
+
+    document.getElementById('results-head').textContent = `${slot.toUpperCase()} — ${data.total || 0} LISTINGS`;
+    applyFiltersAndSort();
+    toast(`${slot}: ${tagged.length} items loaded`, 'ok');
+
+  } catch(e) {
+    document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('loading', 'active'));
+    document.getElementById('results-list').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon" style="color:var(--red)">✕</div>
+        <div class="empty-title">SEARCH FAILED</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${e.message}</div>
+      </div>`;
+    toast('Search failed: ' + e.message, 'err');
+  }
+}
+
+async function scanAll() {
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true;
+  btn.textContent = 'SCANNING...';
+  allResults = []; // clear previous
+
+  const slots = ['ring', 'amulet', 'helmet', 'body', 'gloves', 'boots', 'belt'];
+  for (const slot of slots) {
+    await searchSlot(slot);
+    await new Promise(r => setTimeout(r, 900));
+  }
+
+  document.getElementById('results-head').textContent = `ALL SLOTS — ${allResults.length} ITEMS`;
+  btn.disabled = false;
+  btn.textContent = '⬡ SCAN ALL UPGRADES';
+  toast('Full scan complete — ' + allResults.length + ' items scored', 'ok');
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const [health, leagues] = await Promise.all([
+      fetch(PROXY + '/health').then(r => r.json()),
+      fetch(PROXY + '/leagues').then(r => r.json())
+    ]);
+
+    document.getElementById('proxy-dot').className = 'dot dot-on';
+    document.getElementById('rate-badge').textContent = `${health.rateLimitRemaining || 12} req/min`;
+
+    const leagueList = leagues.result || [];
+    const current = leagueList.find(l =>
+      !l.id.toLowerCase().includes('standard') &&
+      !l.id.toLowerCase().includes('hardcore') &&
+      !l.id.toLowerCase().startsWith('hc')
+    ) || leagueList[0];
+
+    if (current) {
+      currentLeague = current.id;
+      document.getElementById('league-badge').textContent = current.text.toUpperCase();
+    }
+
+    toast('Proxy connected · ' + currentLeague, 'ok');
+  } catch(e) {
+    document.getElementById('proxy-dot').className = 'dot dot-off';
+    document.getElementById('league-badge').textContent = 'PROXY OFFLINE';
+    toast('Start the proxy: node poe2forge-proxy.js', 'err');
+  }
+}
+
+init();
+</script>
+</body>
+</html>
