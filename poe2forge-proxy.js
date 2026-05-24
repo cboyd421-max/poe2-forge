@@ -11,6 +11,8 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { DatabaseSync } = require('node:sqlite');
 
 // Load .env file if present
 try {
@@ -24,8 +26,87 @@ try {
 // ── CONFIG ──────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 const POESESSID = process.env.POESESSID || '';
-const USER_AGENT = 'POE2Forge/2.1 BuildOptimizer (contact: cboyd421@gmail.com)';
+// POE_ACCOUNT includes the discriminator, e.g. "Keep_it_55th#5010".
+// Required by /character-window/get-characters when fetching by public profile
+// — the discriminator-less form returns 403.
+const POE_ACCOUNT = process.env.POE_ACCOUNT || '';
+const USER_AGENT = 'POE2Forge/2.3 BuildOptimizer (contact: cboyd421@gmail.com)';
 const GGG_HOST = 'www.pathofexile.com';
+const REALM = 'poe2';
+const TRADE_LOG_PATH = path.join(__dirname, 'trade_log.sqlite');
+
+// ── AUTH ABSTRACTION ────────────────────────────────────────────────────────
+// Phase 1 uses POESESSID. When GGG OAuth approval lands, swap the impl behind
+// this function — callers never have to change.
+function getAuthHeaders() {
+  return { 'Cookie': `POESESSID=${POESESSID}` };
+}
+
+// ── TRADE LOGGING (SQLite, for Phase 10 market-intelligence ingest) ─────────
+let db = null;
+try {
+  db = new DatabaseSync(TRADE_LOG_PATH);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS trade_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL,
+      league TEXT NOT NULL,
+      slot TEXT,
+      query_hash TEXT,
+      response_summary TEXT,
+      item_count INTEGER,
+      min_price REAL,
+      median_price REAL,
+      price_currency TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_trade_log_league_ts ON trade_log(league, timestamp);
+  `);
+  console.log(`[trade-log] ready: ${TRADE_LOG_PATH}`);
+} catch (e) {
+  console.error('[trade-log] init failed (logging disabled):', e.message);
+  db = null;
+}
+
+function hashQuery(obj) {
+  return crypto.createHash('sha256').update(JSON.stringify(obj)).digest('hex').slice(0, 16);
+}
+
+function summarizePrices(items) {
+  const priced = items
+    .map(it => ({ amount: it?.listing?.price?.amount, currency: it?.listing?.price?.currency }))
+    .filter(p => typeof p.amount === 'number' && p.currency);
+  if (!priced.length) return { item_count: items.length, min_price: null, median_price: null, price_currency: null };
+  const bucket = {};
+  for (const p of priced) (bucket[p.currency] ||= []).push(p.amount);
+  const dominant = Object.entries(bucket).sort((a, b) => b[1].length - a[1].length)[0];
+  const amounts = dominant[1].slice().sort((a, b) => a - b);
+  const median = amounts.length % 2 ? amounts[(amounts.length - 1) / 2] : (amounts[amounts.length/2 - 1] + amounts[amounts.length/2]) / 2;
+  return { item_count: items.length, min_price: amounts[0], median_price: median, price_currency: dominant[0] };
+}
+
+function logTradeSearch({ league, slot, query, items }) {
+  if (!db) return;
+  try {
+    const summary = summarizePrices(items || []);
+    const stmt = db.prepare(`
+      INSERT INTO trade_log (timestamp, league, slot, query_hash, response_summary, item_count, min_price, median_price, price_currency)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      new Date().toISOString(),
+      league || '',
+      slot || null,
+      hashQuery(query || {}),
+      JSON.stringify({ total: items?.length || 0, currencies: Object.keys((items || []).reduce((acc, it) => { const c = it?.listing?.price?.currency; if (c) acc[c] = true; return acc; }, {})) }),
+      summary.item_count,
+      summary.min_price,
+      summary.median_price,
+      summary.price_currency
+    );
+  } catch (e) {
+    console.error('[trade-log] write failed:', e.message);
+  }
+}
 
 // Rate limiting — GGG enforces strict limits
 // Max ~12 requests per 60 seconds on trade API
@@ -51,7 +132,7 @@ function isRateLimited() {
 }
 
 // ── GGG REQUEST FORWARDER ────────────────────────────────────────────────────
-function forwardToGGG(method, path, body, callback) {
+function forwardToGGG(method, path, body, callback, extraHeaders = {}) {
   const options = {
     hostname: GGG_HOST,
     port: 443,
@@ -59,16 +140,17 @@ function forwardToGGG(method, path, body, callback) {
     method: method,
     headers: {
       'Content-Type': 'application/json',
-      'Cookie': `POESESSID=${POESESSID}`,
       'User-Agent': USER_AGENT,
       'Accept': 'application/json',
       'Origin': 'https://www.pathofexile.com',
       'Referer': 'https://www.pathofexile.com/trade2',
+      ...getAuthHeaders(),
+      ...extraHeaders,
     }
   };
 
-  if (body) {
-    const bodyStr = JSON.stringify(body);
+  const bodyStr = body == null ? null : (typeof body === 'string' ? body : JSON.stringify(body));
+  if (bodyStr != null) {
     options.headers['Content-Length'] = Buffer.byteLength(bodyStr);
   }
 
@@ -86,7 +168,7 @@ function forwardToGGG(method, path, body, callback) {
 
   req.on('error', (e) => callback(e));
 
-  if (body) req.write(JSON.stringify(body));
+  if (bodyStr != null) req.write(bodyStr);
   req.end();
 }
 
@@ -152,6 +234,9 @@ function handleSearch(league, body, res) {
   }
   forwardToGGG('POST', `/api/trade2/search/${league}`, body, (err, data, status) => {
     if (err) { res.writeHead(500); res.end(JSON.stringify({ error: err.message })); return; }
+    // Log search metadata — Phase 10 market-intelligence ingest.
+    // No items here (just search IDs); /fetch returns the priced items.
+    logTradeSearch({ league, slot: body?._slot, query: body?.query || body, items: [] });
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
   });
@@ -170,11 +255,93 @@ function handleFetch(hashes, queryId, league, res) {
   });
 }
 
-// POST /smart-search — build-aware upgrade finder
-function handleSmartSearch(body, res) {
-  const { league = 'Runes of Aldur', slot, stats = {}, budget } = body;
+// ── CHARACTER ENDPOINTS (public-profile route) ──────────────────────────────
+// GGG's character-window/* endpoints work for any account whose "Hide
+// characters tab" privacy setting is OFF, even without POESESSID — provided
+// you pass accountName with the discriminator (e.g. Keep_it_55th#5010).
+// Without the discriminator the endpoint returns 403 Forbidden code 6, which
+// is what was stumping Phase 1 earlier in this session.
+// POESESSID is still sent (in case GGG later requires it for private accounts
+// or richer fields), but it isn't doing the auth work here.
+function ggCharacterCall(subpath, params, callback) {
+  const body = new URLSearchParams({
+    realm: REALM,
+    ...(POE_ACCOUNT ? { accountName: POE_ACCOUNT } : {}),
+    ...params,
+  }).toString();
+  forwardToGGG(
+    'POST',
+    `/character-window/${subpath}`,
+    body,
+    callback,
+    {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Referer': 'https://www.pathofexile.com/account/view-profile',
+    }
+  );
+}
 
-  const query = buildSmartQuery(slot, stats, budget);
+// GET /characters — list this account's PoE2 characters
+function handleCharacters(res) {
+  if (!POE_ACCOUNT) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'POE_ACCOUNT not configured in .env (need accountName#discriminator, e.g. Keep_it_55th#5010)' }));
+  }
+  ggCharacterCall('get-characters', {}, (err, data, status) => {
+    if (err) { res.writeHead(500); return res.end(JSON.stringify({ error: err.message })); }
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+  });
+}
+
+// GET /character/:name — full equipped items + passives for one character
+function handleCharacter(name, res) {
+  if (!POE_ACCOUNT) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'POE_ACCOUNT not configured in .env' }));
+  }
+  const itemsP = new Promise((resolve) => {
+    ggCharacterCall('get-items', { character: name }, (err, data, status) =>
+      resolve({ err, data, status }));
+  });
+  const passivesP = new Promise((resolve) => {
+    ggCharacterCall('get-passive-skills', { character: name }, (err, data, status) =>
+      resolve({ err, data, status }));
+  });
+  Promise.all([itemsP, passivesP]).then(([items, passives]) => {
+    if (items.err) { res.writeHead(500); return res.end(JSON.stringify({ error: items.err.message })); }
+    if (items.status >= 400) {
+      res.writeHead(items.status, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'GGG character fetch failed', detail: items.data }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      character: items.data?.character || null,
+      items: items.data?.items || [],
+      passives: passives.status < 400 ? (passives.data || null) : null,
+    }));
+  });
+}
+
+// Lightweight reachability check for the character API. Returns true if we
+// can list this account's characters (accountName + public-profile path).
+function checkPosessidValid(callback) {
+  if (!POE_ACCOUNT) return callback(false);
+  ggCharacterCall('get-characters', {}, (err, data, status) => {
+    if (err) return callback(false);
+    callback(status >= 200 && status < 300 && Array.isArray(data));
+  });
+}
+
+// POST /smart-search — candidate-pool finder (Phase A)
+// New strategy: do NOT AND-stack stat needs. Pull a wide pool of
+// equippable candidates per slot, ranked by GGG's built-in weight.
+// All scoring + ranking happens client-side for transparency.
+function handleSmartSearch(body, res) {
+  const { league = 'Runes of Aldur', slot, stats = {}, budget, poolSize = 20 } = body;
+
+  const query = buildCandidateQuery(slot, stats, budget);
 
   if (isRateLimited()) {
     res.writeHead(429); res.end(JSON.stringify({ error: 'Rate limit reached. Wait 60s.' })); return;
@@ -187,97 +354,132 @@ function handleSmartSearch(body, res) {
       return;
     }
 
-    const hashes = (searchData.result || []).slice(0, 10).join(',');
-    if (!hashes) {
+    const all = searchData.result || [];
+    if (!all.length) {
       res.writeHead(200);
-      res.end(JSON.stringify({ results: [], queryId: searchData.id, total: 0 }));
+      res.end(JSON.stringify({ results: [], queryId: searchData.id, total: 0, slot }));
       return;
     }
 
-    setTimeout(() => {
-      if (isRateLimited()) {
-        res.writeHead(429); res.end(JSON.stringify({ error: 'Rate limit hit on fetch.' })); return;
+    // Fetch up to poolSize items, batched in groups of 10 (API limit per /fetch call)
+    const targetCount = Math.min(poolSize, all.length);
+    const batches = [];
+    for (let i = 0; i < targetCount; i += 10) {
+      batches.push(all.slice(i, i + 10));
+    }
+
+    const fetchAll = async () => {
+      const results = [];
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        if (i > 0) await new Promise(r => setTimeout(r, 500)); // be polite to GGG
+        if (isRateLimited()) {
+          return { rateLimited: true, results };
+        }
+        const items = await new Promise((resolve) => {
+          const hashes = batch.join(',');
+          const fetchPath = `/api/trade2/fetch/${hashes}?query=${searchData.id}&realm=poe2`;
+          forwardToGGG('GET', fetchPath, null, (err2, fetchData) => {
+            if (err2) return resolve([]);
+            resolve(fetchData.result || []);
+          });
+        });
+        results.push(...items);
       }
-      const fetchPath = `/api/trade2/fetch/${hashes}?query=${searchData.id}&realm=poe2`;
-      forwardToGGG('GET', fetchPath, null, (err2, fetchData, status2) => {
-        if (err2) { res.writeHead(500); res.end(JSON.stringify({ error: err2.message })); return; }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          queryId: searchData.id,
-          total: searchData.total,
-          slot,
-          results: (fetchData.result || []).map(parseItem)
-        }));
-      });
-    }, 500);
+      return { rateLimited: false, results };
+    };
+
+    fetchAll().then(({ rateLimited, results }) => {
+      logTradeSearch({ league, slot, query, items: results });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        queryId: searchData.id,
+        total: searchData.total,
+        slot,
+        rateLimited,
+        fetched: results.length,
+        results: results.map(parseItem).filter(Boolean)
+      }));
+    });
   });
 }
 
-// ── SMART QUERY BUILDER ───────────────────────────────────────────────────────
-function buildSmartQuery(slot, stats, budget) {
-  const { fireRes, coldRes, lightRes, life, es, int: intel } = stats;
-
-  const needsFireRes = (fireRes || 0) < 75;
-  const needsColdRes = (coldRes || 0) < 75;
-  const needsLightRes = (lightRes || 0) < 75;
-  const needsLife = (life || 0) < 3000;
-
-  const filters = {};
-  const statFilters = [];
-
+// ── CANDIDATE QUERY BUILDER (Phase A) ────────────────────────────────────────
+// Goal: pull a wide, well-ordered pool of items that the character could
+// realistically wear. Equippability gating + price cap only — scoring is
+// client-side. Use 'count' stat group to bias toward items with relevant mods
+// without making any single mod a hard requirement.
+function buildCandidateQuery(slot, stats, budget) {
   const typeMap = {
-    helmet: 'armour.head',
-    body: 'armour.chest',
+    helmet: 'armour.helmet',
+    body:   'armour.chest',
     gloves: 'armour.gloves',
-    boots: 'armour.boots',
-    ring: 'accessory.ring',
+    boots:  'armour.boots',
+    ring:   'accessory.ring',
     amulet: 'accessory.amulet',
+    belt:   'accessory.belt',
     weapon: 'weapon',
-    offhand: 'armour.shield',
-    belt: 'accessory.belt',
+    offhand:'armour.shield',
   };
 
+  const filters = {};
   if (slot && typeMap[slot]) {
     filters.type_filters = { filters: { category: { option: typeMap[slot] } } };
   }
 
-  if (needsFireRes) {
-    statFilters.push({ id: 'explicit.stat_3372524247', value: { min: 25 }, disabled: false });
-  }
-  if (needsColdRes) {
-    statFilters.push({ id: 'explicit.stat_4220027924', value: { min: 25 }, disabled: false });
-  }
-  if (needsLightRes) {
-    statFilters.push({ id: 'explicit.stat_1671376347', value: { min: 25 }, disabled: false });
-  }
-  if (needsLife) {
-    statFilters.push({ id: 'explicit.stat_3299347043', value: { min: 60 }, disabled: false });
-  }
-
-  if (budget) {
-    filters.trade_filters = {
+  // Equippability: cap by character level if provided
+  if (stats.level) {
+    filters.req_filters = {
       filters: {
-        price: { max: budget, option: 'divine' }
+        lvl: { max: stats.level }
       }
     };
   }
 
-  filters.trade_filters = {
-    ...(filters.trade_filters || {}),
-    filters: {
-      ...(filters.trade_filters?.filters || {}),
-      sale_type: { option: 'priced' }
-    }
-  };
+  // Trade filters: priced listings, optional budget
+  const tradeFilters = { sale_type: { option: 'priced' } };
+  if (budget) {
+    tradeFilters.price = { max: Number(budget), option: 'divine' };
+  }
+  filters.trade_filters = { filters: tradeFilters };
+
+  // Build a 'count' stat group: "at least 1 of these mods" — biases toward
+  // items with SOMETHING useful, without hard-requiring any single mod.
+  // Uses PoE2 PSEUDO stat IDs where available — these aggregate across
+  // implicit + explicit + hybrid mods, giving a much truer match.
+  const relevantStatIds = [
+    'pseudo.pseudo_total_life',                  // any source of Life
+    'pseudo.pseudo_total_energy_shield',         // any source of ES
+    'pseudo.pseudo_total_mana',                  // any source of Mana
+    'pseudo.pseudo_total_fire_resistance',       // any source of Fire Res
+    'pseudo.pseudo_total_cold_resistance',       // any source of Cold Res
+    'pseudo.pseudo_total_lightning_resistance',  // any source of Lightning Res
+    'pseudo.pseudo_total_chaos_resistance',      // any source of Chaos Res
+    'pseudo.pseudo_total_all_elemental_resistances',  // "all res" mods
+    'pseudo.pseudo_total_strength',              // any source of Str
+    'pseudo.pseudo_total_intelligence',          // any source of Int
+    'explicit.stat_3261801346',                  // Dexterity (no pseudo found)
+    'explicit.stat_3981240776',                  // Spirit
+  ];
 
   return {
     query: {
       status: { option: 'online' },
-      stats: statFilters.length ? [{ type: 'and', filters: statFilters }] : [],
+      stats: [{
+        type: 'count',
+        value: { min: 1 },
+        filters: relevantStatIds.map(id => ({ id, disabled: false }))
+      }],
       filters,
     },
+    // Sort by relevance — GGG ranks by mod weight by default
     sort: { price: 'asc' }
   };
+}
+
+// Legacy buildSmartQuery kept for /search route backward compat — unused
+function buildSmartQuery(slot, stats, budget) {
+  return buildCandidateQuery(slot, stats, budget);
 }
 
 // ── ITEM PARSER ───────────────────────────────────────────────────────────────
@@ -317,8 +519,34 @@ const server = http.createServer((req, res) => {
 
   // GET /health
   if (req.method === 'GET' && path === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ status: 'ok', proxy: 'POE2Forge v2.1', port: PORT }));
+    checkPosessidValid((valid) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        proxy: 'POE2Forge v2.3',
+        port: PORT,
+        posessidConfigured: Boolean(POESESSID),
+        accountConfigured: Boolean(POE_ACCOUNT),
+        // 'posessidValid' is a misnomer now that auth is by accountName public
+        // profile — kept for v7 frontend compatibility. The actual signal:
+        // "can we list this account's characters?"
+        posessidValid: valid,
+        tradeLog: Boolean(db),
+        rateLimitRemaining: Math.max(0, RATE_LIMIT.requests - requestLog.length),
+      }));
+    });
+    return;
+  }
+
+  // GET /characters
+  if (req.method === 'GET' && path === '/characters') {
+    return handleCharacters(res);
+  }
+
+  // GET /character/:name
+  const characterMatch = path.match(/^\/character\/(.+)$/);
+  if (req.method === 'GET' && characterMatch) {
+    return handleCharacter(decodeURIComponent(characterMatch[1]), res);
   }
 
   // GET /leagues
@@ -374,18 +602,22 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log('');
   console.log('╔══════════════════════════════════════════════╗');
-  console.log('║       POE2 FORGE — Trade API Proxy           ║');
+  console.log('║       POE2 FORGE — Trade API Proxy v2.2      ║');
   console.log(`║       Running on http://localhost:${PORT}       ║`);
   console.log('╠══════════════════════════════════════════════╣');
   console.log('║  Routes:                                     ║');
-  console.log('║  GET  /health         — health check         ║');
-  console.log('║  GET  /leagues        — available leagues    ║');
-  console.log('║  GET  /stats          — stat filter IDs      ║');
-  console.log('║  GET  /known-stats    — curated stat map     ║');
-  console.log('║  POST /search/:league — search items         ║');
-  console.log('║  GET  /fetch/:hashes  — fetch item details   ║');
-  console.log('║  POST /smart-search   — build-aware search   ║');
+  console.log('║  GET  /health           — health + auth      ║');
+  console.log('║  GET  /leagues          — available leagues  ║');
+  console.log('║  GET  /stats            — stat filter IDs    ║');
+  console.log('║  GET  /known-stats      — curated stat map   ║');
+  console.log('║  GET  /characters       — user character list║');
+  console.log('║  GET  /character/:name  — items + passives   ║');
+  console.log('║  POST /search/:league   — search items       ║');
+  console.log('║  GET  /fetch/:hashes    — fetch item details ║');
+  console.log('║  POST /smart-search     — build-aware search ║');
   console.log('╚══════════════════════════════════════════════╝');
+  console.log(`POESESSID configured: ${POESESSID ? 'yes' : 'NO — set in .env'}`);
+  console.log(`POE_ACCOUNT: ${POE_ACCOUNT || 'NOT SET — required for character endpoints'}`);
   console.log('');
 });
 

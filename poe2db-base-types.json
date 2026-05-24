@@ -1,0 +1,394 @@
+{
+  "Stellar Amulet": {
+    "icon": "icons/StellarAmulet.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Amulets/Basetypes/StellarAmulet.webp",
+    "slot": "amulet",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Stellar_Amulet"
+  },
+  "Solar Amulet": {
+    "icon": "icons/SolarAmulet.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Amulets/Basetypes/SolarAmulet.webp",
+    "slot": "amulet",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Solar_Amulet"
+  },
+  "Gold Amulet": {
+    "icon": "icons/GoldAmulet.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Amulets/Basetypes/GoldAmulet.webp",
+    "slot": "amulet",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Gold_Amulet"
+  },
+  "Crimson Amulet": {
+    "icon": "icons/CrimsonAmulet.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Amulets/Basetypes/CrimsonAmulet.webp",
+    "slot": "amulet",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Crimson_Amulet"
+  },
+  "Bloodstone Amulet": {
+    "icon": "icons/BloodstoneAmulet.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Amulets/Basetypes/BloodstoneAmulet.webp",
+    "slot": "amulet",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Bloodstone_Amulet"
+  },
+  "Heavy Belt": {
+    "icon": "icons/Belt09.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Belts/Basetypes/Belt09.webp",
+    "slot": "belt",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Heavy_Belt"
+  },
+  "Utility Belt": {
+    "icon": "icons/Belt10.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Belts/Basetypes/Belt10.webp",
+    "slot": "belt",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Utility_Belt"
+  },
+  "Linen Belt": {
+    "icon": "icons/Belt02.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Belts/Basetypes/Belt02.webp",
+    "slot": "belt",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Linen_Belt"
+  },
+  "Pearl Ring": {
+    "icon": "icons/PearlRing.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Rings/Basetypes/PearlRing.webp",
+    "slot": "ring_l",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Pearl_Ring"
+  },
+  "Topaz Ring": {
+    "icon": "icons/TopazRing.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Rings/Basetypes/TopazRing.webp",
+    "slot": "ring_l",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Topaz_Ring"
+  },
+  "Gold Ring": {
+    "icon": "icons/GoldRing.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Rings/Basetypes/GoldRing.webp",
+    "slot": "ring_l",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Gold_Ring"
+  },
+  "Sapphire Ring": {
+    "icon": "icons/SapphireRing.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Rings/Basetypes/SapphireRing.webp",
+    "slot": "ring_l",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Sapphire_Ring"
+  },
+  "Ruby Ring": {
+    "icon": "icons/RubyRing.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Rings/Basetypes/RubyRing.webp",
+    "slot": "ring_l",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Ruby_Ring"
+  },
+  "Emerald Ring": {
+    "icon": "icons/EmeraldRing.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Rings/Basetypes/EmeraldRing.webp",
+    "slot": "ring_l",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Emerald_Ring"
+  },
+  "Amethyst Ring": {
+    "icon": "icons/AmethystRing.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Rings/Basetypes/AmethystRing.webp",
+    "slot": "ring_l",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Amethyst_Ring"
+  },
+  "Prismatic Ring": {
+    "icon": "icons/PrismaticRing.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Rings/Basetypes/PrismaticRing.webp",
+    "slot": "ring_l",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Prismatic_Ring"
+  },
+  "Abyssal Signet": {
+    "icon": "icons/IronRing.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Rings/Basetypes/IronRing.webp",
+    "slot": "ring_l",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Abyssal_Signet"
+  },
+  "Armoured Vest": {
+    "icon": "icons/BodyDex01.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/BodyArmours/Basetypes/BodyDex01.webp",
+    "slot": "body",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Armoured_Vest"
+  },
+  "Champion Cuirass": {
+    "icon": "icons/BodyStr01.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/BodyArmours/Basetypes/BodyStr01.webp",
+    "slot": "body",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Champion_Cuirass"
+  },
+  "Smuggler Coat": {
+    "icon": "icons/BodyDex10.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/BodyArmours/Basetypes/BodyDex10.webp",
+    "slot": "body",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Smuggler_Coat"
+  },
+  "Ancestral Tiara": {
+    "icon": "icons/HelmetInt08.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Helmets/Basetypes/HelmetInt08.webp",
+    "slot": "helmet",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Ancestral_Tiara"
+  },
+  "Martyr Crown": {
+    "icon": "icons/HelmetIntStr04.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Helmets/Basetypes/HelmetIntStr04.webp",
+    "slot": "helmet",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Martyr_Crown"
+  },
+  "Heavy Crown": {
+    "icon": "icons/HelmetIntStr05.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Helmets/Basetypes/HelmetIntStr05.webp",
+    "slot": "helmet",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Heavy_Crown"
+  },
+  "Gauze Wraps": {
+    "icon": "icons/GlovesDexInt01.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Gloves/Basetypes/GlovesDexInt01.webp",
+    "slot": "gloves",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Gauze_Wraps"
+  },
+  "Massive Mitts": {
+    "icon": "icons/GlovesStr06.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Gloves/Basetypes/GlovesStr06.webp",
+    "slot": "gloves",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Massive_Mitts"
+  },
+  "Charmed Shoes": {
+    "icon": "icons/BootsDexInt02.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Boots/Basetypes/BootsDexInt02.webp",
+    "slot": "boots",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Charmed_Shoes"
+  },
+  "Tasalian Greaves": {
+    "icon": "icons/BootsStr06.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Boots/Basetypes/BootsStr06.webp",
+    "slot": "boots",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Tasalian_Greaves"
+  },
+  "Vaal Greaves": {
+    "icon": "icons/BootsStr05.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Boots/Basetypes/BootsStr05.webp",
+    "slot": "boots",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Vaal_Greaves"
+  },
+  "Crude Bow": {
+    "icon": "icons/Bow01.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Weapons/TwoHandWeapons/Bows/Basetypes/Bow01.webp",
+    "slot": "weapon",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Crude_Bow"
+  },
+  "Obliterator Bow": {
+    "icon": "icons/Bow09.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Weapons/TwoHandWeapons/Bows/Basetypes/Bow09.webp",
+    "slot": "weapon",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Obliterator_Bow"
+  },
+  "Recurve Bow": {
+    "icon": "icons/Bow04.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Weapons/TwoHandWeapons/Bows/Basetypes/Bow04.webp",
+    "slot": "weapon",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Recurve_Bow"
+  },
+  "Tense Crossbow": {
+    "icon": "icons/2HCrossbow02.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Weapons/TwoHandWeapons/Crossbows/2HCrossbow02.webp",
+    "slot": "weapon",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Tense_Crossbow"
+  },
+  "Shrine Sceptre": {
+    "icon": "icons/Sceptre06a.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Weapons/OneHandWeapons/Scepters/Basetypes/Sceptre06a.webp",
+    "slot": "weapon",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Shrine_Sceptre"
+  },
+  "Omen Sceptre": {
+    "icon": "icons/Sceptre04.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Weapons/OneHandWeapons/Scepters/Basetypes/Sceptre04.webp",
+    "slot": "weapon",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Omen_Sceptre"
+  },
+  "Attuned Wand": {
+    "icon": "icons/Wand03.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Weapons/OneHandWeapons/Wands/Basetypes/Wand03.webp",
+    "slot": "weapon",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Attuned_Wand"
+  },
+  "Visceral Quiver": {
+    "icon": "icons/QuiverVisceral.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Quivers/Basetypes/QuiverVisceral.webp",
+    "slot": "offhand",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Visceral_Quiver"
+  },
+  "Sacred Focus": {
+    "icon": "icons/Focus08.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Offhand/Foci/Basetypes/Focus08.webp",
+    "slot": "offhand",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Sacred_Focus"
+  },
+  "Crystal Focus": {
+    "icon": "icons/Focus06.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Offhand/Foci/Basetypes/Focus06.webp",
+    "slot": "offhand",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Crystal_Focus"
+  },
+  "Maji Talisman": {
+    "icon": "icons/RabidTalisman.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Offhand/Talismans/RabidTalisman.webp",
+    "slot": "weapon",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Maji_Talisman"
+  },
+  "Silk Robe": {
+    "icon": "icons/BodyInt05.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/BodyArmours/Basetypes/BodyInt05.webp",
+    "slot": "body",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Silk_Robe"
+  },
+  "Grand Manchettes": {
+    "icon": "icons/GlovesStr01.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Gloves/Basetypes/GlovesStr01.webp",
+    "slot": "gloves",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Grand_Manchettes"
+  },
+  "Wanderer Shoes": {
+    "icon": "icons/BootsDexInt01.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Boots/Basetypes/BootsDexInt01.webp",
+    "slot": "boots",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Wanderer_Shoes"
+  },
+  "Gargantuan Life Flask": {
+    "icon": "icons/FlaskLife07.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Flasks/Basetypes/FlaskLife07.webp",
+    "slot": "flask",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Gargantuan_Life_Flask"
+  },
+  "Ultimate Life Flask": {
+    "icon": "icons/FlaskLife09.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Flasks/Basetypes/FlaskLife09.webp",
+    "slot": "flask",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Ultimate_Life_Flask"
+  },
+  "Transcendent Life Flask": {
+    "icon": "icons/FlaskLife08.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Flasks/Basetypes/FlaskLife08.webp",
+    "slot": "flask",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Transcendent_Life_Flask"
+  },
+  "Gargantuan Mana Flask": {
+    "icon": "icons/FlaskMana07.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Flasks/Basetypes/FlaskMana07.webp",
+    "slot": "flask",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Gargantuan_Mana_Flask"
+  },
+  "Ultimate Mana Flask": {
+    "icon": "icons/FlaskMana09.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Flasks/Basetypes/FlaskMana09.webp",
+    "slot": "flask",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Ultimate_Mana_Flask"
+  },
+  "Transcendent Mana Flask": {
+    "icon": "icons/FlaskMana08.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Flasks/Basetypes/FlaskMana08.webp",
+    "slot": "flask",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Transcendent_Mana_Flask"
+  },
+  "Thawing Charm": {
+    "icon": "icons/ThawingCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Basetypes/ThawingCharm.webp",
+    "slot": "charm",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Thawing_Charm"
+  },
+  "Golden Charm": {
+    "icon": "icons/GoldenCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Basetypes/GoldenCharm.webp",
+    "slot": "charm",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Golden_Charm"
+  },
+  "Silver Charm": {
+    "icon": "icons/SilverCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Basetypes/SilverCharm.webp",
+    "slot": "charm",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Silver_Charm"
+  },
+  "Stone Charm": {
+    "icon": "icons/StoneCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Basetypes/StoneCharm.webp",
+    "slot": "charm",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Stone_Charm"
+  },
+  "Staunching Charm": {
+    "icon": "icons/StaunchingCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Basetypes/StaunchingCharm.webp",
+    "slot": "charm",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Staunching_Charm"
+  },
+  "Topaz Charm": {
+    "icon": "icons/TopazCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Basetypes/TopazCharm.webp",
+    "slot": "charm",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Topaz_Charm"
+  },
+  "Sapphire Charm": {
+    "icon": "icons/SapphireCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Basetypes/SapphireCharm.webp",
+    "slot": "charm",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Sapphire_Charm"
+  },
+  "Ruby Charm": {
+    "icon": "icons/RubyCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Basetypes/RubyCharm.webp",
+    "slot": "charm",
+    "category": "Active Skill Gem",
+    "page": "https://poe2db.tw/us/Ruby_Charm"
+  }
+}

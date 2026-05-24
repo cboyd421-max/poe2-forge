@@ -1,0 +1,197 @@
+{
+  "Hollow Form": {
+    "slug": "Hollow_Form",
+    "page": "https://poe2db.tw/us/Hollow_Form",
+    "name": "Hollow Form"
+  },
+  "Rolling Slam": {
+    "slug": "Rolling_Slam",
+    "page": "https://poe2db.tw/us/Rolling_Slam",
+    "name": "Rolling Slam",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/DoubleSlamSkillGem.webp"
+  },
+  "Whirling Assault": {
+    "slug": "Whirling_Assault",
+    "page": "https://poe2db.tw/us/Whirling_Assault",
+    "name": "Whirling Assault",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/WhirlingAssaultSkillGem.webp"
+  },
+  "Tempest Flurry": {
+    "slug": "Tempest_Flurry",
+    "page": "https://poe2db.tw/us/Tempest_Flurry",
+    "name": "Tempest Flurry",
+    "qualityBonus": "+(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/TempestFlurrySkillGem.webp"
+  },
+  "Ice Strike": {
+    "slug": "Ice_Strike",
+    "page": "https://poe2db.tw/us/Ice_Strike",
+    "name": "Ice Strike",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/ComboAttackSkillGem.webp"
+  },
+  "Storm Wave": {
+    "slug": "Storm_Wave",
+    "page": "https://poe2db.tw/us/Storm_Wave",
+    "name": "Storm Wave",
+    "qualityBonus": "+(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/StormWaveSkillGem.webp"
+  },
+  "Flicker Strike": {
+    "slug": "Flicker_Strike",
+    "page": "https://poe2db.tw/us/Flicker_Strike",
+    "name": "Flicker Strike",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/FlickerStrikeTeleportSkillGem.webp"
+  },
+  "Falling Thunder": {
+    "slug": "Falling_Thunder",
+    "page": "https://poe2db.tw/us/Falling_Thunder",
+    "name": "Falling Thunder",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/LightningStrikeSkillGem.webp"
+  },
+  "Time of Need": {
+    "slug": "Time_of_Need",
+    "page": "https://poe2db.tw/us/Time_of_Need",
+    "name": "Time of Need",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/TimeOfNeedSkillGem.webp"
+  },
+  "Vaal Pact": {
+    "slug": "Vaal_Pact",
+    "page": "https://poe2db.tw/us/Vaal_Pact",
+    "name": "Vaal Pact"
+  },
+  "Cannibalism": {
+    "slug": "Cannibalism",
+    "page": "https://poe2db.tw/us/Cannibalism",
+    "name": "Cannibalism"
+  },
+  "Vitality": {
+    "slug": "Vitality",
+    "page": "https://poe2db.tw/us/Vitality",
+    "name": "Vitality",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/NewSupport/Lineage/WalkeroftheWilds.webp"
+  },
+  "Mysticism": {
+    "slug": "Mysticism",
+    "page": "https://poe2db.tw/us/Mysticism",
+    "name": "Mysticism"
+  },
+  "Impurity": {
+    "slug": "Impurity",
+    "page": "https://poe2db.tw/us/Impurity",
+    "name": "Impurity",
+    "qualityBonus": "Aura",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/BlankGem.webp"
+  },
+  "Poisonburst Arrow": {
+    "slug": "Poisonburst_Arrow",
+    "page": "https://poe2db.tw/us/Poisonburst_Arrow",
+    "name": "Poisonburst Arrow",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/RangerPoisonArrowSkillGem.webp"
+  },
+  "Lightning Arrow": {
+    "slug": "Lightning_Arrow",
+    "page": "https://poe2db.tw/us/Lightning_Arrow",
+    "name": "Lightning Arrow",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/LightningArrowSkillGem.webp"
+  },
+  "Bursting Plague": {
+    "slug": "Bursting_Plague",
+    "page": "https://poe2db.tw/us/Bursting_Plague",
+    "name": "Bursting Plague",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/NewSupport/BurstingPlagueSupportGem.webp"
+  },
+  "Detonate Dead": {
+    "slug": "Detonate_Dead",
+    "page": "https://poe2db.tw/us/Detonate_Dead",
+    "name": "Detonate Dead",
+    "qualityBonus": "+(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/WitchDetonateDeadSkillGem.webp"
+  },
+  "Firestorm": {
+    "slug": "Firestorm",
+    "page": "https://poe2db.tw/us/Firestorm",
+    "name": "Firestorm",
+    "qualityBonus": "+(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/WitchFirestormSkillGem.webp"
+  },
+  "Fireball": {
+    "slug": "Fireball",
+    "page": "https://poe2db.tw/us/Fireball",
+    "name": "Fireball",
+    "qualityBonus": "+(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/GreaterFireballSkillGem.webp"
+  },
+  "Ice Nova": {
+    "slug": "Ice_Nova",
+    "page": "https://poe2db.tw/us/Ice_Nova",
+    "name": "Ice Nova",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/IceNovaSkillGem.webp"
+  },
+  "Frostbolt": {
+    "slug": "Frostbolt",
+    "page": "https://poe2db.tw/us/Frostbolt",
+    "name": "Frostbolt",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/FrostBoltSkillGem.webp"
+  },
+  "Combat Frenzy": {
+    "slug": "Combat_Frenzy",
+    "page": "https://poe2db.tw/us/Combat_Frenzy",
+    "name": "Combat Frenzy",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/RangerCombatFrenzySkillGem.webp"
+  },
+  "Brutality": {
+    "slug": "Brutality",
+    "page": "https://poe2db.tw/us/Brutality",
+    "name": "Brutality"
+  },
+  "Heightened Curse": {
+    "slug": "Heightened_Curse",
+    "page": "https://poe2db.tw/us/Heightened_Curse",
+    "name": "Heightened Curse",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/NewSupport/CurseEffectSupportGem.webp"
+  },
+  "Despair": {
+    "slug": "Despair",
+    "page": "https://poe2db.tw/us/Despair",
+    "name": "Despair",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/WitchDespairSkillGem.webp"
+  },
+  "Enfeeble": {
+    "slug": "Enfeeble",
+    "page": "https://poe2db.tw/us/Enfeeble",
+    "name": "Enfeeble",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/WitchEnfeebleSkillGem.webp"
+  },
+  "Cast on Critical": {
+    "slug": "Cast_on_Critical",
+    "page": "https://poe2db.tw/us/Cast_on_Critical",
+    "name": "Cast on Critical",
+    "qualityBonus": "(0",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/CastOnCritMetaSkillGem.webp"
+  },
+  "Spell Echo": {
+    "slug": "Spell_Echo",
+    "page": "https://poe2db.tw/us/Spell_Echo",
+    "name": "Spell Echo",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/NewSupport/SpellEchoSupportGem.webp"
+  },
+  "Concentrated Area": {
+    "slug": "Concentrated_Area",
+    "page": "https://poe2db.tw/us/Concentrated_Area",
+    "name": "Concentrated Area",
+    "icon": "https://cdn.poe2db.tw/image/Art/2DItems/Gems/New/NewSupport/ConcentratedEffectSupportGem.webp"
+  }
+}

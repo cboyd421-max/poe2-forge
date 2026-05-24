@@ -1,0 +1,2287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POE2 FORGE — Build Optimizer v7</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<!--
+  ────────────────────────────────────────────────────────────────────────────
+  POE2 FORGE v7 — PHASE 1
+  ────────────────────────────────────────────────────────────────────────────
+  Phase 1 deliverables (from POE2Forge_Roadmap.pdf):
+    • Welcome tab "Connect Character" section: league → character → import
+    • Maps GGG character payload into PoB2-aligned currentBuild schema
+    • Optimizer paperdoll renders imported gear; left panel shows derived stats
+    • Priority sliders + filters wired against currentBuild
+    • Per-slot + scan-all upgrade flow operates on currentBuild.gear
+    • Logout button clears currentBuild → empty state
+  Phase 1 also brought to the proxy (poe2forge-proxy.js v2.2):
+    • posessidValid flag on /health (auth-required GGG round-trip)
+    • GET /characters       — authenticated user's PoE2 character list
+    • GET /character/:name  — equipped items + passives
+    • getAuthHeaders() abstraction (POESESSID now, OAuth Bearer later)
+    • SQLite trade logging via node:sqlite for Phase 10 ingest
+
+  currentBuild SCHEMA (modeled on PoB2 XML — locked for Phase 7+ compatibility)
+  ────────────────────────────────────────────────────────────────────────────
+  {
+    source: 'ggg' | 'pob2' | 'gallery' | 'tracker' | null,
+    importedAt: ISO timestamp | null,
+    character: {
+      name, level, class, ascendancy, league
+    },
+    stats: {
+      life, es, mana, armour, evasion,
+      fireRes, coldRes, lightRes, chaosRes,
+      str, dex, int,
+      dps, ehp  // populated by Phase 8 calc engine
+    },
+    gear: {
+      weapon, offhand, helmet, body, gloves, boots,
+      belt, amulet, ring_l, ring_r
+    },        // each slot: { name, typeLine, rarity, ilvl, mods[], implicits[], sockets[] }
+    skills: [ // each: { mainSkill, supports[], slot, gemLevel, quality } ]
+    tree: {
+      ascendancyPath: [],
+      allocatedNodes: [],
+      jewelSockets: [],
+      masteries: []
+    },
+    flasks: [],
+    charms: []
+  }
+  ════════════════════════════════════════════════════════════════════════════
+-->
+<style>
+:root {
+  --void: #020108;
+  --deep: #060412;
+  --surface: #0c0a1c;
+  --panel: #100e26;
+  --panel2: #14122e;
+  --border: #1c1836;
+  --border-hi: #2a2558;
+  --blue: #1a8fff;
+  --blue-dim: #0a3060;
+  --blue-glow: rgba(26,143,255,0.12);
+  --blue-glow2: rgba(26,143,255,0.06);
+  --violet: #7b2fff;
+  --violet-glow: rgba(123,47,255,0.1);
+  --gold: #ffd600;
+  --gold-dim: rgba(255,214,0,0.08);
+  --red: #ff2d4a;
+  --red-glow: rgba(255,45,74,0.1);
+  --orange: #ff8c20;
+  --green: #00e676;
+  --green-glow: rgba(0,230,118,0.1);
+  --text: #e8dcc8;
+  --text-dim: #9a8a6a;
+  --text-muted: #3e3828;
+  --rare: #ffe020;
+  --magic: #6090ff;
+  --unique: #ff8c20;
+
+  --bg-scene: #0a0612;
+  --panel-bg: rgba(12, 8, 28, 0.85);
+  --panel-bg-strong: rgba(6, 3, 18, 0.92);
+  --panel-bg-light: rgba(20, 14, 46, 0.45);
+  --panel-blur: blur(8px);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg-scene);
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.bg-scene {
+  position: fixed; inset: 0;
+  background: var(--bg-scene);
+  background-image:
+    radial-gradient(ellipse 70% 45% at 50% 30%, rgba(140, 70, 220, 0.20) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 35% at 20% 75%, rgba(80, 30, 180, 0.14) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 30% at 85% 80%, rgba(180, 40, 120, 0.08) 0%, transparent 70%);
+  z-index: 0;
+}
+.bg-scene::after {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(2,1,8,0.55) 0%, rgba(2,1,8,0.1) 35%, rgba(2,1,8,0.1) 65%, rgba(2,1,8,0.75) 100%),
+    repeating-linear-gradient(0deg, transparent, transparent 48px, rgba(255,255,255,0.005) 48px, rgba(255,255,255,0.005) 49px),
+    repeating-linear-gradient(90deg, transparent, transparent 48px, rgba(255,255,255,0.005) 48px, rgba(255,255,255,0.005) 49px);
+  pointer-events: none;
+}
+
+#app { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100vh; }
+
+/* ── HEADER ── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg-strong);
+  backdrop-filter: var(--panel-blur);
+  flex-shrink: 0; z-index: 100;
+}
+
+.logo {
+  font-family: 'Orbitron', monospace; font-size: 20px; font-weight: 900;
+  letter-spacing: 5px; color: var(--blue);
+  text-shadow: 0 0 24px rgba(26,143,255,0.4);
+  flex-shrink: 0;
+}
+.logo em { color: var(--gold); font-style: normal; }
+.logo .ver { font-size: 10px; color: var(--text-muted); margin-left: 8px; letter-spacing: 2px; }
+
+/* Top-tab navigation */
+.top-tabs {
+  display: flex; gap: 2px;
+  margin-left: 40px;
+  flex: 1;
+}
+.top-tab {
+  background: transparent; border: none;
+  color: var(--text-dim); cursor: pointer;
+  font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 700;
+  letter-spacing: 3px; padding: 10px 22px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.18s;
+  text-transform: uppercase;
+}
+.top-tab:hover { color: var(--text); }
+.top-tab.active {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+  text-shadow: 0 0 12px rgba(26,143,255,0.5);
+}
+.top-tab .badge-dot {
+  display: inline-block; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--gold);
+  margin-left: 6px; vertical-align: middle;
+  box-shadow: 0 0 6px var(--gold);
+}
+
+.header-center { display: flex; align-items: center; gap: 10px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+
+.pill {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  padding: 3px 10px; letter-spacing: 1px;
+  border: 1px solid; border-radius: 1px;
+}
+.pill-blue { color: var(--blue); border-color: rgba(26,143,255,0.3); background: var(--blue-glow2); }
+.pill-gold { color: var(--gold); border-color: rgba(255,214,0,0.25); background: var(--gold-dim); }
+.pill-green { color: var(--green); border-color: rgba(0,230,118,0.25); background: var(--green-glow); }
+.pill-red { color: var(--red); border-color: rgba(255,45,74,0.3); background: var(--red-glow); }
+.pill-muted { color: var(--text-dim); border-color: var(--border-hi); background: transparent; }
+
+.dot { width:7px; height:7px; border-radius:50%; transition: all 0.3s; }
+.dot-on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot-off { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.dot-wait { background: var(--text-muted); }
+
+/* ── TAB CONTENT ── */
+.tab-content {
+  flex: 1;
+  overflow: hidden;
+  display: none;
+}
+.tab-content.active { display: flex; flex-direction: column; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   WELCOME TAB
+   ════════════════════════════════════════════════════════════════════════ */
+.welcome-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px 60px;
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.welcome-hero {
+  text-align: center;
+  padding: 30px 0 50px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 40px;
+}
+.welcome-hero h1 {
+  font-family: 'Orbitron', monospace;
+  font-size: 36px; font-weight: 900;
+  letter-spacing: 8px;
+  color: var(--blue);
+  text-shadow: 0 0 32px rgba(26,143,255,0.4);
+  margin-bottom: 10px;
+}
+.welcome-hero h1 em { color: var(--gold); font-style: normal; }
+.welcome-hero .tagline {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px; letter-spacing: 3px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.welcome-hero .pitch {
+  font-size: 15px;
+  color: var(--text);
+  margin-top: 20px;
+  max-width: 700px;
+  margin-left: auto; margin-right: auto;
+  line-height: 1.6;
+}
+
+.welcome-section {
+  margin-bottom: 40px;
+}
+.welcome-section-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 12px; letter-spacing: 4px;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Setup checklist */
+.checklist {
+  display: flex; flex-direction: column;
+  gap: 8px;
+}
+.check-item {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 18px;
+  background: var(--panel-bg-light);
+  border: 1px solid var(--border);
+  transition: all 0.18s;
+}
+.check-item:hover { border-color: var(--border-hi); }
+.check-item.ok { border-left: 3px solid var(--green); }
+.check-item.fail { border-left: 3px solid var(--red); }
+.check-item.wait { border-left: 3px solid var(--text-muted); }
+.check-item.warn { border-left: 3px solid var(--orange); }
+
+.check-icon {
+  font-family: 'Orbitron', monospace;
+  font-size: 18px; font-weight: 700;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-hi);
+}
+.check-item.ok .check-icon { color: var(--green); border-color: rgba(0,230,118,0.4); background: var(--green-glow); }
+.check-item.fail .check-icon { color: var(--red); border-color: rgba(255,45,74,0.4); background: var(--red-glow); }
+.check-item.wait .check-icon { color: var(--text-dim); }
+.check-item.warn .check-icon { color: var(--orange); border-color: rgba(255,140,32,0.4); background: rgba(255,140,32,0.08); }
+
+.check-body { display: flex; flex-direction: column; gap: 3px; }
+.check-title { font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: 0.5px; }
+.check-detail { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+.check-detail code {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  background: var(--surface);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  color: var(--blue);
+}
+
+.check-action {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.check-action:hover { color: var(--blue); border-color: var(--blue); }
+.check-action.primary { color: var(--gold); border-color: rgba(255,214,0,0.4); }
+.check-action.primary:hover { background: var(--gold-dim); }
+
+/* Connect Character (Phase 1) */
+.connect-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto auto;
+  gap: 10px;
+  align-items: end;
+  padding: 18px;
+  background: var(--panel-bg-light);
+  border: 1px solid var(--border);
+}
+.connect-field { display: flex; flex-direction: column; gap: 4px; }
+.connect-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px; letter-spacing: 2px;
+  color: var(--text-dim); text-transform: uppercase;
+}
+.connect-select {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Rajdhani', sans-serif;
+  font-size: 13px; padding: 7px 10px; outline: none; cursor: pointer;
+}
+.connect-select:focus { border-color: var(--blue); }
+.connect-select:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.connect-btn {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px; letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 9px 18px;
+  background: var(--blue-glow);
+  border: 1px solid rgba(26,143,255,0.4);
+  color: var(--blue);
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.connect-btn:hover:not(:disabled) {
+  background: rgba(26,143,255,0.2);
+  box-shadow: 0 0 18px rgba(26,143,255,0.25);
+}
+.connect-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.connect-btn.danger {
+  background: transparent;
+  border-color: rgba(255,45,74,0.35);
+  color: var(--red);
+}
+.connect-btn.danger:hover:not(:disabled) {
+  background: var(--red-glow);
+  box-shadow: 0 0 14px rgba(255,45,74,0.18);
+}
+
+.connect-status {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; color: var(--text-dim);
+  padding: 10px 18px 0;
+  min-height: 18px;
+}
+.connect-status.ok  { color: var(--green); }
+.connect-status.err { color: var(--red); }
+.connect-status.info { color: var(--blue); }
+
+/* Re-check button on header */
+.recheck-btn {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  float: right;
+  margin-top: -6px;
+  transition: all 0.15s;
+}
+.recheck-btn:hover { color: var(--blue); border-color: var(--blue); }
+
+/* Info/getting-started cards */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+.info-card {
+  padding: 18px 20px;
+  background: var(--panel-bg-light);
+  border: 1px solid var(--border);
+  transition: all 0.18s;
+}
+.info-card:hover { border-color: var(--border-hi); }
+.info-card-icon {
+  font-family: 'Orbitron', monospace;
+  color: var(--violet);
+  font-size: 24px;
+  margin-bottom: 10px;
+}
+.info-card-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--blue);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.info-card-body {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+.info-card-body code {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  background: var(--surface);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  color: var(--blue);
+}
+.info-card-cta {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid var(--blue);
+  color: var(--blue);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.info-card-cta:hover { background: var(--blue-glow); }
+
+/* Troubleshooting collapsible */
+.collapse {
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+  background: var(--panel-bg-light);
+}
+.collapse-head {
+  padding: 12px 18px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  user-select: none;
+}
+.collapse-head:hover { background: rgba(26,143,255,0.04); }
+.collapse-head::after {
+  content: '+';
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 16px;
+  color: var(--text-dim);
+}
+.collapse.open .collapse-head::after { content: '−'; color: var(--blue); }
+.collapse-body {
+  display: none;
+  padding: 4px 18px 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  border-top: 1px solid var(--border);
+}
+.collapse.open .collapse-body { display: block; }
+.collapse-body code {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  background: var(--surface);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  color: var(--blue);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   OPTIMIZER TAB (preserved from v5 with currentBuild integration)
+   ════════════════════════════════════════════════════════════════════════ */
+.body {
+  display: grid;
+  grid-template-columns: 280px 1fr 340px;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+}
+
+.panel {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hi) transparent;
+  background: var(--panel-bg);
+  backdrop-filter: var(--panel-blur);
+  border-right: 1px solid var(--border);
+}
+.panel:last-child { border-right: none; border-left: 1px solid var(--border); }
+.panel-center {
+  background: transparent;
+  backdrop-filter: none;
+  border-right: none;
+  position: relative;
+  overflow-y: auto;
+}
+
+.panel-head {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  letter-spacing: 3px; color: var(--text-muted);
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg-strong);
+  position: sticky; top: 0; z-index: 10;
+  text-transform: uppercase;
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+.section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.section-title {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  letter-spacing: 2px; color: var(--text-muted);
+  margin-bottom: 10px; text-transform: uppercase;
+}
+
+.char-name { font-size: 17px; font-weight: 700; letter-spacing: 1px; }
+.char-class {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  color: var(--blue); letter-spacing: 2px; margin-top: 2px; margin-bottom: 12px;
+}
+
+.kv-row {
+  display: flex; justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 13px;
+}
+.kv-label { color: var(--text-dim); }
+.kv-val { font-family: 'Share Tech Mono', monospace; font-weight: 600; }
+.kv-val.bad { color: var(--red); }
+.kv-val.warn { color: var(--orange); }
+.kv-val.ok { color: var(--green); }
+.kv-val.empty { color: var(--text-muted); }
+
+.res-rows { display: flex; flex-direction: column; gap: 6px; }
+.res-row {
+  display: grid; grid-template-columns: 60px 1fr 48px;
+  align-items: center; gap: 8px;
+}
+.res-name { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
+.res-bar-track { height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden; }
+.res-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+.res-pct {
+  font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  font-weight: 700; text-align: right;
+}
+.res-pct.neg { color: var(--red); }
+.res-pct.low { color: var(--orange); }
+.res-pct.ok { color: var(--green); }
+.res-pct.empty { color: var(--text-muted); }
+
+.slider-rows { display: flex; flex-direction: column; gap: 10px; }
+.slider-meta { display: flex; justify-content: space-between; margin-bottom: 5px; }
+.slider-label { font-size: 12px; color: var(--text-dim); letter-spacing: 1px; }
+.slider-val { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--blue); }
+
+input[type=range] {
+  -webkit-appearance: none; width: 100%; height: 3px;
+  background: var(--border-hi); border-radius: 2px; outline: none; cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--blue);
+  box-shadow: 0 0 6px rgba(26,143,255,0.6); cursor: pointer;
+}
+input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.filter-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; font-size: 13px;
+}
+.filter-label { color: var(--text-dim); }
+
+.toggle {
+  width: 32px; height: 16px; border-radius: 8px;
+  background: var(--border-hi); cursor: pointer;
+  position: relative; transition: background 0.2s;
+  border: none; outline: none;
+}
+.toggle.on { background: var(--blue); }
+.toggle::after {
+  content: ''; position: absolute;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: white; top: 3px; left: 3px;
+  transition: transform 0.2s;
+}
+.toggle.on::after { transform: translateX(16px); }
+
+.filter-select {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; padding: 3px 6px; outline: none; cursor: pointer;
+}
+.budget-input {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; padding: 3px 8px; width: 80px; outline: none;
+}
+
+/* ── EMPTY STATE (when currentBuild is null) ── */
+.empty-build-state {
+  height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center;
+  padding: 60px 40px;
+  gap: 18px;
+}
+.empty-build-icon {
+  font-family: 'Orbitron', monospace;
+  font-size: 72px;
+  color: var(--violet);
+  opacity: 0.3;
+  line-height: 1;
+}
+.empty-build-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 14px; letter-spacing: 3px;
+  color: var(--text);
+  text-transform: uppercase;
+}
+.empty-build-detail {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  max-width: 380px;
+}
+.empty-build-cta {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px; letter-spacing: 3px;
+  text-transform: uppercase;
+  padding: 12px 28px;
+  background: var(--blue-glow);
+  border: 1px solid rgba(26,143,255,0.4);
+  color: var(--blue);
+  cursor: pointer;
+  margin-top: 12px;
+  transition: all 0.18s;
+}
+.empty-build-cta:hover {
+  background: rgba(26,143,255,0.18);
+  box-shadow: 0 0 24px rgba(26,143,255,0.3);
+}
+
+.empty-left-panel {
+  padding: 30px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.empty-left-panel .icon { font-size: 32px; opacity: 0.4; margin-bottom: 12px; }
+
+/* ── PAPERDOLL ── */
+.center-content { padding: 20px; height: 100%; display: flex; flex-direction: column; }
+.center-head {
+  font-family: 'Orbitron', monospace; font-size: 10px;
+  letter-spacing: 3px; color: var(--text-dim);
+  margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  text-transform: uppercase;
+}
+.center-head .hint { color: var(--blue); font-size: 9px; }
+
+.paperdoll {
+  display: grid;
+  grid-template-columns: repeat(6, 96px);
+  grid-template-rows: repeat(6, 96px);
+  gap: 8px;
+  justify-content: center;
+  align-content: start;
+  padding-top: 20px;
+}
+
+.consumables {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  align-self: center;
+}
+.consumables .flask { width: 96px; height: 200px; }
+.consumables .charm { width: 96px; height: 96px; }
+
+.slot-tile {
+  background: var(--panel-bg-light);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: all 0.18s;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.slot-tile:hover {
+  border-color: var(--blue);
+  background: rgba(26,143,255,0.1);
+}
+.slot-tile.filled { border-color: var(--border-hi); }
+.slot-tile.filled.rare { border-color: rgba(255,224,32,0.5); background: rgba(255,224,32,0.06); }
+.slot-tile.filled.magic { border-color: rgba(96,144,255,0.5); background: rgba(96,144,255,0.06); }
+.slot-tile.filled.unique { border-color: rgba(255,140,32,0.5); background: rgba(255,140,32,0.06); }
+.slot-tile.empty .slot-item { color: var(--red); }
+.slot-tile.disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+.slot-tile.display-only { cursor: default; opacity: 0.55; }
+.slot-tile.scanning {
+  border-color: var(--violet);
+  background: rgba(123,47,255,0.1);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+.slot-tile.has-results { border-color: var(--green); }
+
+.slot-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  padding: 5px 7px 0;
+  opacity: 0.75;
+}
+.slot-icon { flex: 1; display: flex; align-items: center; justify-content: center; padding: 4px; min-height: 0; }
+.slot-icon img { max-height: 100%; max-width: 100%; object-fit: contain; }
+.slot-item { font-size: 11px; font-weight: 600; padding: 0 6px 3px; text-align: center; line-height: 1.15; opacity: 0.9; }
+.slot-tile.rare .slot-item { color: var(--rare); }
+.slot-tile.magic .slot-item { color: var(--magic); }
+.slot-tile.unique .slot-item { color: var(--unique); }
+.slot-meta {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  padding: 0 6px 4px;
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+}
+.slot-count { color: var(--blue); }
+
+@keyframes breathe { 0%,100%{opacity:1} 50%{opacity:0.65} }
+
+.scan-all-bar {
+  margin-top: 18px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(26,143,255,0.08);
+  border: 1px solid rgba(26,143,255,0.25);
+}
+.scan-all-btn {
+  background: transparent;
+  border: none;
+  color: var(--blue);
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.scan-all-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.scan-all-status {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   THEORYCRAFT TAB (sub-tab placeholders for Phases 2-5 — filled in later)
+   ════════════════════════════════════════════════════════════════════════ */
+.theorycraft-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.subtab-bar {
+  display: flex;
+  background: var(--panel-bg-strong);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+.subtab {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  padding: 14px 24px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+.subtab:hover { color: var(--text); }
+.subtab.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+.subtab .phase-tag {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  letter-spacing: 1px;
+}
+
+.subtab-content {
+  flex: 1;
+  overflow-y: auto;
+  display: none;
+  padding: 40px 60px;
+}
+.subtab-content.active { display: block; }
+
+.placeholder-panel {
+  max-width: 700px;
+  margin: 60px auto;
+  text-align: center;
+  padding: 60px 40px;
+  border: 1px dashed var(--border-hi);
+  background: var(--panel-bg-light);
+}
+.placeholder-icon {
+  font-family: 'Orbitron', monospace;
+  font-size: 48px;
+  color: var(--violet);
+  opacity: 0.4;
+  margin-bottom: 18px;
+}
+.placeholder-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 16px;
+  letter-spacing: 4px;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.placeholder-phase {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--blue);
+  margin-bottom: 18px;
+}
+.placeholder-detail {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.placeholder-spec {
+  text-align: left;
+  margin-top: 24px;
+  padding: 18px 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+.placeholder-spec strong { color: var(--gold); display: block; margin-bottom: 6px; font-family: 'Orbitron', monospace; font-size: 10px; letter-spacing: 2px; }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  padding: 10px 16px; font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  border: 1px solid; z-index: 999; opacity: 0; transform: translateY(8px);
+  transition: all 0.25s; pointer-events: none; max-width: 280px;
+  background: var(--panel);
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.ok { color: var(--green); border-color: rgba(0,230,118,0.35); }
+.toast.err { color: var(--red); border-color: rgba(255,45,74,0.35); }
+.toast.info { color: var(--blue); border-color: rgba(26,143,255,0.35); }
+</style>
+</head>
+<body>
+
+<div class="bg-scene"></div>
+
+<div id="app">
+
+<!-- HEADER -->
+<header>
+  <div class="logo">POE2 <em>FORGE</em><span class="ver">v7</span></div>
+
+  <div class="top-tabs">
+    <button class="top-tab" data-tab="welcome" onclick="switchTab('welcome')">Welcome</button>
+    <button class="top-tab" data-tab="optimizer" onclick="switchTab('optimizer')">Optimizer</button>
+    <button class="top-tab" data-tab="theorycraft" onclick="switchTab('theorycraft')">Theorycraft</button>
+  </div>
+
+  <div class="header-right">
+    <div class="dot dot-wait" id="proxy-dot" title="Proxy status"></div>
+    <span class="pill pill-muted" id="league-badge">PROXY OFFLINE</span>
+    <span class="pill pill-blue" id="build-badge">NO BUILD LOADED</span>
+  </div>
+</header>
+
+<!-- ═════════════════════════ WELCOME TAB ═════════════════════════ -->
+<div class="tab-content" id="tab-welcome">
+  <div class="welcome-container">
+
+    <div class="welcome-hero">
+      <h1>POE2 <em>FORGE</em></h1>
+      <div class="tagline">Build Optimizer · Theorycraft Partner · Market Intelligence</div>
+      <p class="pitch">
+        A Path of Exile 2 build tool combining live trade-market optimization, AI-assisted
+        theorycrafting, and (eventually) a full PoB2 replacement — in one cohesive web app.
+        Currently in Phase 1 of the roadmap.
+      </p>
+    </div>
+
+    <!-- SETUP CHECKLIST -->
+    <div class="welcome-section">
+      <div class="welcome-section-title">
+        First-Time Setup
+        <button class="recheck-btn" onclick="runSetupCheck()">⟳ RE-CHECK</button>
+      </div>
+      <div class="checklist" id="setup-checklist">
+        <!-- Populated by runSetupCheck() -->
+      </div>
+    </div>
+
+    <!-- CONNECT CHARACTER (Phase 1) -->
+    <div class="welcome-section">
+      <div class="welcome-section-title">Connect Character</div>
+      <div class="connect-grid">
+        <div class="connect-field">
+          <div class="connect-label">League</div>
+          <select class="connect-select" id="connect-league" onchange="onLeagueChange()" disabled>
+            <option value="">— proxy offline —</option>
+          </select>
+        </div>
+        <div class="connect-field">
+          <div class="connect-label">Character</div>
+          <select class="connect-select" id="connect-character" onchange="onCharacterChange()" disabled>
+            <option value="">— pick a league first —</option>
+          </select>
+        </div>
+        <button class="connect-btn" id="connect-import-btn" onclick="importCharacter()" disabled>Import →</button>
+        <button class="connect-btn danger" id="connect-logout-btn" onclick="logoutCharacter()" style="display:none">Logout</button>
+      </div>
+      <div class="connect-status" id="connect-status"></div>
+    </div>
+
+    <!-- GETTING STARTED -->
+    <div class="welcome-section">
+      <div class="welcome-section-title">Getting Started</div>
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="info-card-icon">⬡</div>
+          <div class="info-card-title">Optimizer</div>
+          <div class="info-card-body">
+            Scan the live trade market for upgrades to your current gear. Priority sliders
+            weight upgrades by what matters most to you — resistance, life, DPS, defense, or
+            magic find. Requires an imported build.
+          </div>
+          <button class="info-card-cta" onclick="switchTab('optimizer')">OPEN OPTIMIZER →</button>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon">◆</div>
+          <div class="info-card-title">Theorycraft</div>
+          <div class="info-card-body">
+            PoB2 code decoder, curated build gallery, cross-class S-rank scanner, and the
+            Advanced Thaumaturgy alt-quality reference. Phases 2–5 of the roadmap.
+          </div>
+          <button class="info-card-cta" onclick="switchTab('theorycraft')">OPEN THEORYCRAFT →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HOW TO USE -->
+    <div class="welcome-section">
+      <div class="welcome-section-title">How to use POE2 Forge</div>
+
+      <div class="collapse open">
+        <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
+          1 · Start the proxy
+        </div>
+        <div class="collapse-body">
+          The Optimizer needs a local proxy running to talk to the GGG trade API.
+          Open a terminal in the folder containing <code>poe2forge-proxy.js</code> and run:
+          <br><br>
+          <code>node poe2forge-proxy.js</code>
+          <br><br>
+          The proxy listens on <code>http://localhost:3001</code>. The status dot in the
+          top-right corner of the header turns <span style="color:var(--green)">green</span> when it's reachable.
+        </div>
+      </div>
+
+      <div class="collapse">
+        <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
+          2 · Configure your POESESSID
+        </div>
+        <div class="collapse-body">
+          Forge uses your GGG account cookie (POESESSID) to make authenticated trade-API
+          requests. To get it:
+          <br><br>
+          1. Log in to <code>pathofexile.com</code> in your browser<br>
+          2. Open DevTools (F12) → Application → Cookies → pathofexile.com<br>
+          3. Copy the value of the <code>POESESSID</code> cookie<br>
+          4. Paste it into your <code>.env</code> file next to the proxy:<br>
+          &nbsp;&nbsp;&nbsp;<code>POESESSID=your_cookie_value_here</code><br>
+          5. Restart the proxy
+          <br><br>
+          The <code>.env</code> file should already be in your <code>.gitignore</code> — never commit it.
+          Full GGG OAuth flow lands in Phase 1 when GGG approves the app.
+        </div>
+      </div>
+
+      <div class="collapse">
+        <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
+          3 · Import a character
+        </div>
+        <div class="collapse-body">
+          Use the <strong>Connect Character</strong> section above. The League dropdown auto-fills
+          from GGG when the proxy is reachable. Pick your character, click <code>Import →</code>,
+          and the Optimizer tab fills with your live gear.
+          <br><br>
+          The shared <code>currentBuild</code> object updates on import — every other tab that
+          reads from it (Optimizer paperdoll, Theorycraft scanners in later phases) sees the same
+          source of truth. Click <code>Logout</code> to clear it.
+        </div>
+      </div>
+
+      <div class="collapse">
+        <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
+          4 · Troubleshooting
+        </div>
+        <div class="collapse-body">
+          <strong>Proxy offline:</strong> Check the terminal where you ran <code>node poe2forge-proxy.js</code>
+          for errors. Most common: Node version too old (need 18+), or port 3001 already in use.
+          <br><br>
+          <strong>League badge shows "PROXY OFFLINE":</strong> The proxy isn't reachable. Make sure
+          it's running and that nothing else is using port 3001.
+          <br><br>
+          <strong>POESESSID expired:</strong> GGG cookies expire periodically. Re-do step 2 to refresh.
+          <br><br>
+          <strong>Nothing happens when I click a paperdoll slot:</strong> You need an imported build first.
+          Use Welcome → Import (Phase 1) or Theorycraft → PoB Decoder (Phase 2).
+        </div>
+      </div>
+    </div>
+
+    <!-- ROADMAP TEASER -->
+    <div class="welcome-section">
+      <div class="welcome-section-title">Roadmap Status</div>
+      <div class="info-card">
+        <div class="info-card-icon">◇</div>
+        <div class="info-card-title">Current Phase: 1 — Character Import &amp; Price Logging</div>
+        <div class="info-card-body">
+          Phase 1 connects Forge to your live GGG account via POESESSID, imports your character
+          into the shared <code>currentBuild</code>, and begins logging trade-market data to
+          <code>trade_log.sqlite</code> for the Phase 10 market-intelligence work. Next: Phase 2
+          (PoB2 decoder) — paste a PoB code to populate <code>currentBuild</code> the same way.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═════════════════════════ OPTIMIZER TAB ═════════════════════════ -->
+<div class="tab-content" id="tab-optimizer">
+  <div class="body">
+
+    <!-- LEFT PANEL — CHARACTER + CONTROLS -->
+    <div class="panel" id="optimizer-left">
+      <div class="panel-head"><span>Character &amp; Focus</span></div>
+
+      <!-- This panel's content is rendered by renderOptimizerLeftPanel() based on currentBuild -->
+      <div id="optimizer-left-content"></div>
+    </div>
+
+    <!-- CENTER PANEL -->
+    <div class="panel-center" id="center-panel">
+      <div id="optimizer-center-content"></div>
+    </div>
+
+    <!-- RIGHT PANEL — ITEM DETAIL -->
+    <div class="panel" id="detail-panel">
+      <div class="panel-head"><span>Item Detail</span></div>
+      <div class="detail-panel" id="detail-content">
+        <div class="empty-build-state" style="padding:40px 20px">
+          <div class="empty-build-icon" style="font-size:48px">⬡</div>
+          <div class="empty-build-title" style="font-size:11px">No item selected</div>
+          <div class="empty-build-detail" style="font-size:12px">
+            Load a build first, then scan a slot to see upgrade options here.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═════════════════════════ THEORYCRAFT TAB ═════════════════════════ -->
+<div class="tab-content" id="tab-theorycraft">
+  <div class="theorycraft-container">
+
+    <div class="subtab-bar">
+      <button class="subtab active" data-subtab="pob-decoder" onclick="switchSubtab('pob-decoder')">
+        PoB2 Decoder<span class="phase-tag">P2</span>
+      </button>
+      <button class="subtab" data-subtab="gallery" onclick="switchSubtab('gallery')">
+        Build Gallery<span class="phase-tag">P3</span>
+      </button>
+      <button class="subtab" data-subtab="scanner" onclick="switchSubtab('scanner')">
+        S-Rank Scanner<span class="phase-tag">P4</span>
+      </button>
+      <button class="subtab" data-subtab="alt-quality" onclick="switchSubtab('alt-quality')">
+        Alt-Quality Reference<span class="phase-tag">P5</span>
+      </button>
+    </div>
+
+    <div class="subtab-content active" id="subtab-pob-decoder">
+      <div class="placeholder-panel">
+        <div class="placeholder-icon">⬡</div>
+        <div class="placeholder-title">PoB2 Decoder</div>
+        <div class="placeholder-phase">PHASE 2 · COMING NEXT</div>
+        <div class="placeholder-detail">
+          Paste a Path of Building 2 export code, decode it client-side, and populate the
+          shared build context with the full build — gear, skills, passive tree, ascendancy.
+        </div>
+        <div class="placeholder-spec">
+          <strong>Scope</strong>
+          • Single textarea for PoB2 code input<br>
+          • Client-side decode: base64-urlsafe → zlib inflate → XML parse (via pako)<br>
+          • Maps decoded XML into currentBuild schema<br>
+          • Inline summary display: skills, key gear, ascendancy choices<br>
+          • "Send to Optimizer" button switches tabs and runs upgrade scan
+        </div>
+      </div>
+    </div>
+
+    <div class="subtab-content" id="subtab-gallery">
+      <div class="placeholder-panel">
+        <div class="placeholder-icon">◆</div>
+        <div class="placeholder-title">Build Gallery</div>
+        <div class="placeholder-phase">PHASE 3 · PLANNED</div>
+        <div class="placeholder-detail">
+          Curated, searchable library of launch-ready builds for the current league.
+          Card-based grid; click to load into the shared build context.
+        </div>
+        <div class="placeholder-spec">
+          <strong>Day-one curated set</strong>
+          • Bridget Whirling Assault Martial Artist Monk<br>
+          • Wollie Facebreaker Hollow Form clone build<br>
+          • Spirit Walker Tame Beast minion league-start<br>
+          • Gemling Absent-amulet caster slot abuser<br>
+          • Blood Mage Vitality Siphon (post-leech rework)
+        </div>
+      </div>
+    </div>
+
+    <div class="subtab-content" id="subtab-scanner">
+      <div class="placeholder-panel">
+        <div class="placeholder-icon">◈</div>
+        <div class="placeholder-title">Cross-Class S-Rank Scanner</div>
+        <div class="placeholder-phase">PHASE 4 · PLANNED</div>
+        <div class="placeholder-detail">
+          The signature analytical tool. Pattern-matches builds for the "downside text
+          negated by ascendancy keystone" pattern that produces every recent S-tier build.
+        </div>
+        <div class="placeholder-spec">
+          <strong>Day-one rule pack</strong>
+          • Last Lament Desolate Crossbow + Lich Eternal Life (downside: 300 Life sacrifice)<br>
+          • Rolling Slam + Hollow Form clones (downside: 1s flat attack time)<br>
+          • Vaal Pact sustained-leech detector (post-rework mechanics)<br>
+          • Time of Need + CDR scaling trap warning (Jungroan build dead in 0.5)
+        </div>
+      </div>
+    </div>
+
+    <div class="subtab-content" id="subtab-alt-quality">
+      <div class="placeholder-panel">
+        <div class="placeholder-icon">✦</div>
+        <div class="placeholder-title">Advanced Thaumaturgy Reference</div>
+        <div class="placeholder-phase">PHASE 5 · 5/29 LAUNCH DELIVERABLE</div>
+        <div class="placeholder-detail">
+          Searchable database of every skill gem's hidden Advanced Thaumaturgy alt-quality
+          effect. Datamined from PoE2DB once 0.5 launches.
+        </div>
+        <div class="placeholder-spec">
+          <strong>Known examples (pre-launch)</strong>
+          • Fireball: normal 2 extra projectiles → alt 10 projectiles in a ring<br>
+          • Explosive Shot: alt grants +2 magazine rounds, removes forced reload<br>
+          • Wires into Phase 4 scanner: "this Gemling build's main skill alt-quality..."
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═════════════════════════════════════════════════════════════════════════
+// POE2 FORGE v7 — PHASE 1
+// ═════════════════════════════════════════════════════════════════════════
+
+// ── CONFIG ──────────────────────────────────────────────────────────────
+const PROXY = 'http://localhost:3001';
+const STORAGE_KEYS = {
+  visited: 'forge:visited',
+  build: 'forge:currentBuild',
+  prefs: 'forge:prefs'
+};
+
+// ── SHARED BUILD CONTEXT ────────────────────────────────────────────────
+// Single source of truth — Welcome populates it, Optimizer reads it,
+// Theorycraft will write to it (Phase 2+). PoB2-aligned schema.
+let currentBuild = null;
+
+function setCurrentBuild(build) {
+  currentBuild = build;
+  if (build) {
+    try { localStorage.setItem(STORAGE_KEYS.build, JSON.stringify(build)); } catch(e) {}
+  } else {
+    localStorage.removeItem(STORAGE_KEYS.build);
+    // Clearing the build invalidates scan results — they were scored against
+    // a character that no longer exists.
+    allResults = [];
+    filteredResults = [];
+    selectedItem = null;
+    activeSlot = null;
+  }
+  renderBuildBadge();
+  renderOptimizerLeftPanel();
+  renderOptimizerCenterPanel();
+  renderItemDetailEmpty();
+}
+
+function loadStoredBuild() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.build);
+    if (raw) currentBuild = JSON.parse(raw);
+  } catch(e) { currentBuild = null; }
+}
+
+function renderBuildBadge() {
+  const badge = document.getElementById('build-badge');
+  if (currentBuild?.character) {
+    const c = currentBuild.character;
+    badge.textContent = `${c.name || 'Unnamed'} · L${c.level || '?'}`;
+    badge.className = 'pill pill-green';
+  } else {
+    badge.textContent = 'NO BUILD LOADED';
+    badge.className = 'pill pill-blue';
+  }
+  // Reflect login state in Connect Character buttons
+  const logoutBtn = document.getElementById('connect-logout-btn');
+  if (logoutBtn) logoutBtn.style.display = currentBuild ? '' : 'none';
+}
+
+// ── OPTIMIZER UI STATE (Phase 1) ────────────────────────────────────────
+// User priorities + filter state. Persisted to localStorage so they survive
+// page reloads independent of currentBuild.
+let focus = { resistance: 10, life: 8, dps: 4, defense: 3, mf: 1 };
+let filters = { onlineOnly: true, instantOnly: false };
+try {
+  const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.prefs) || '{}');
+  if (stored.focus) Object.assign(focus, stored.focus);
+  if (stored.filters) Object.assign(filters, stored.filters);
+} catch(e) {}
+
+function savePrefs() {
+  try { localStorage.setItem(STORAGE_KEYS.prefs, JSON.stringify({ focus, filters })); } catch(e) {}
+}
+
+// Trade-market results state (per-slot scan + scored list)
+let allResults = [];        // every fetched item, _slot-tagged
+let filteredResults = [];   // post filter + sort
+let selectedItem = null;
+let activeSlot = null;      // current results view slot, null = paperdoll mode
+
+// Cached league + character lists for the Connect Character section
+let leaguesCache = [];
+let charactersCache = [];
+let currentLeague = '';     // active league (for trade search)
+
+// ── CONNECT CHARACTER (Phase 1) ─────────────────────────────────────────
+function setConnectStatus(msg, type = '') {
+  const el = document.getElementById('connect-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.className = 'connect-status' + (type ? ' ' + type : '');
+}
+
+async function populateLeagueDropdown() {
+  const sel = document.getElementById('connect-league');
+  if (!sel) return;
+  try {
+    const data = await fetch(PROXY + '/leagues').then(r => r.json());
+    leaguesCache = (data.result || []).filter(l => l.realm === 'poe2');
+    if (!leaguesCache.length) {
+      sel.innerHTML = '<option value="">— no PoE2 leagues —</option>';
+      sel.disabled = true;
+      return;
+    }
+    // Default selection: first non-Standard/non-HC league (active temp league)
+    const preferred = leaguesCache.find(l =>
+      !/^standard$/i.test(l.id) && !/^hardcore$/i.test(l.id) && !/^hc\s/i.test(l.id)
+    ) || leaguesCache[0];
+    sel.innerHTML = leaguesCache
+      .map(l => `<option value="${l.id}" ${l.id === preferred.id ? 'selected' : ''}>${l.text}</option>`)
+      .join('');
+    sel.disabled = false;
+    currentLeague = preferred.id;
+    onLeagueChange();
+  } catch(e) {
+    sel.innerHTML = '<option value="">— proxy offline —</option>';
+    sel.disabled = true;
+  }
+}
+
+async function onLeagueChange() {
+  const leagueSel = document.getElementById('connect-league');
+  const charSel = document.getElementById('connect-character');
+  const importBtn = document.getElementById('connect-import-btn');
+  currentLeague = leagueSel.value;
+  charSel.disabled = true;
+  importBtn.disabled = true;
+  charSel.innerHTML = '<option value="">loading…</option>';
+  setConnectStatus('Fetching characters…', 'info');
+
+  try {
+    const data = await fetch(PROXY + '/characters').then(r => r.json());
+    if (data?.error) {
+      const msg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+      charSel.innerHTML = '<option value="">— ' + msg + ' —</option>';
+      setConnectStatus('GGG rejected the request: ' + msg + ' · check POESESSID + profile privacy in .env / pathofexile.com settings', 'err');
+      return;
+    }
+    charactersCache = Array.isArray(data) ? data : (data.characters || data.result || []);
+    if (!charactersCache.length) {
+      charSel.innerHTML = '<option value="">— no characters found —</option>';
+      setConnectStatus('No characters on this account', 'info');
+      return;
+    }
+    // Show every character. League sits in the label so user picks the right
+    // realm. Auto-prefer characters matching the selected league.
+    const matching = charactersCache.filter(c => c.league === currentLeague);
+    const others = charactersCache.filter(c => c.league !== currentLeague);
+    const sorted = [...matching, ...others];
+    charSel.innerHTML =
+      '<option value="">— select character —</option>' +
+      sorted.map(c =>
+        `<option value="${c.name}" data-league="${escAttr(c.league || '')}">${escHtml(c.name)} · L${c.level || '?'} · ${escHtml(c.class || c.classId || '?')} · ${escHtml(c.league || 'no league')}</option>`
+      ).join('');
+    charSel.disabled = false;
+    if (matching.length) {
+      setConnectStatus(`${matching.length} character(s) in ${currentLeague}, ${others.length} in other leagues`, 'ok');
+    } else {
+      setConnectStatus(`${charactersCache.length} characters total — none in ${currentLeague}. NOTE: the legacy character API returns PoE1 chars; PoE2 chars need GGG OAuth approval to access.`, 'info');
+    }
+  } catch(e) {
+    charSel.innerHTML = '<option value="">— fetch failed —</option>';
+    setConnectStatus('Network error: ' + e.message, 'err');
+  }
+}
+
+function onCharacterChange() {
+  const sel = document.getElementById('connect-character');
+  const btn = document.getElementById('connect-import-btn');
+  btn.disabled = !sel.value;
+}
+
+async function importCharacter() {
+  const sel = document.getElementById('connect-character');
+  const btn = document.getElementById('connect-import-btn');
+  const name = sel.value;
+  if (!name) return;
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+  setConnectStatus('Fetching items + passives for ' + name + '…', 'info');
+
+  try {
+    const data = await fetch(PROXY + '/character/' + encodeURIComponent(name)).then(r => r.json());
+    if (data?.error) {
+      const msg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+      setConnectStatus('Import failed: ' + msg, 'err');
+      return;
+    }
+    // Use the league of the character we picked (from the cached list) — that
+    // becomes the build's league for downstream trade searches.
+    const cached = charactersCache.find(c => c.name === name);
+    const importedLeague = cached?.league || currentLeague;
+    const build = mapGGGCharacterToBuild(data, importedLeague);
+    currentLeague = importedLeague; // trade searches go against this league
+    setCurrentBuild(build);
+    setConnectStatus(`Imported ${build.character.name} · L${build.character.level} · ${build.character.ascendancy || build.character.class} · ${importedLeague}`, 'ok');
+    toast('Character imported — opening Optimizer', 'ok');
+    setTimeout(() => switchTab('optimizer'), 600);
+  } catch(e) {
+    setConnectStatus('Network error: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import →';
+  }
+}
+
+function logoutCharacter() {
+  setCurrentBuild(null);
+  allResults = [];
+  filteredResults = [];
+  selectedItem = null;
+  activeSlot = null;
+  setConnectStatus('Logged out — currentBuild cleared', 'info');
+  runSetupCheck();
+}
+
+// ── GGG → currentBuild MAPPER ───────────────────────────────────────────
+// Maps GGG's /character-window/get-items + get-passive-skills payload into
+// the PoB2-aligned schema. Schema is locked — don't drift without discussion.
+const GGG_INV_TO_SLOT = {
+  Weapon: 'weapon',
+  Weapon2: 'offhand',
+  Offhand: 'offhand',
+  Helm: 'helmet',
+  BodyArmour: 'body',
+  Gloves: 'gloves',
+  Boots: 'boots',
+  Amulet: 'amulet',
+  Belt: 'belt',
+  Ring: 'ring_l',
+  Ring2: 'ring_r',
+};
+const FRAME_TO_RARITY = ['normal','magic','rare','unique','gem','currency','divcard','quest','prophecy','relic'];
+
+function mapGGGItemToSlot(item) {
+  return {
+    name: item.name || item.typeLine,
+    typeLine: item.typeLine,
+    rarity: FRAME_TO_RARITY[item.frameType] || 'normal',
+    ilvl: item.ilvl,
+    implicits: (item.implicitMods || []).map(cleanModText),
+    mods: [
+      ...(item.implicitMods || []),
+      ...(item.explicitMods || []),
+      ...(item.craftedMods || []),
+      ...(item.enchantMods || []),
+    ].map(cleanModText),
+    sockets: item.sockets || [],
+    icon: item.icon,
+    raw: item,
+  };
+}
+
+function cleanModText(t) {
+  if (!t) return '';
+  return t.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '$2').replace(/\[([^\]]+)\]/g, '$1').trim();
+}
+
+function mapGGGCharacterToBuild(payload, league) {
+  const ch = payload?.character || {};
+  const items = payload?.items || [];
+  const gear = {
+    weapon: null, offhand: null, helmet: null, body: null, gloves: null,
+    boots: null, belt: null, amulet: null, ring_l: null, ring_r: null,
+  };
+  const flasks = [];
+  for (const item of items) {
+    const slot = GGG_INV_TO_SLOT[item.inventoryId];
+    if (slot) {
+      gear[slot] = mapGGGItemToSlot(item);
+    } else if (/^Flask\d+$/.test(item.inventoryId || '')) {
+      flasks.push(mapGGGItemToSlot(item));
+    }
+  }
+  const stats = computeDerivedStats(gear, ch);
+  return {
+    source: 'ggg',
+    importedAt: new Date().toISOString(),
+    character: {
+      name: ch.name || 'Unknown',
+      level: ch.level || 1,
+      class: ch.class || '',
+      ascendancy: ch.ascendancyClass ? ch.class : '',  // GGG returns combined
+      league: ch.league || league || '',
+    },
+    stats,
+    gear,
+    skills: [], // Phase 7+ surfaces gem links from socketedItems
+    tree: {
+      ascendancyPath: [],
+      allocatedNodes: payload?.passives?.hashes || [],
+      jewelSockets: payload?.passives?.jewel_data ? Object.keys(payload.passives.jewel_data) : [],
+      masteries: payload?.passives?.mastery_effects ? Object.keys(payload.passives.mastery_effects) : [],
+    },
+    flasks,
+    charms: [],
+  };
+}
+
+// Pre–Phase-8 stat estimator. Sums what's directly readable from item mod
+// strings — leaves a clear gap for the calc engine to fill in later.
+function computeDerivedStats(gear, charMeta) {
+  const stats = {
+    life: null, es: null, mana: null, armour: null, evasion: null,
+    fireRes: 0, coldRes: 0, lightRes: 0, chaosRes: 0,
+    str: null, dex: null, int: null,
+    dps: null, ehp: null,
+  };
+  let lifeMods = 0, esMods = 0, manaMods = 0, armourMods = 0, evasionMods = 0;
+  let allRes = 0;
+  let str = 0, dex = 0, intel = 0;
+
+  for (const slot of Object.values(gear)) {
+    if (!slot) continue;
+    for (const mod of slot.mods || []) {
+      const m = (mod || '').replace(/\[([^\]|]+)\|([^\]]+)\]/g, '$2').replace(/\[([^\]]+)\]/g, '$1');
+      let mm;
+      if ((mm = m.match(/\+?(\d+) to maximum Life/i))) lifeMods += +mm[1];
+      if ((mm = m.match(/\+?(\d+) to maximum Energy Shield/i))) esMods += +mm[1];
+      if ((mm = m.match(/\+?(\d+) to maximum Mana/i))) manaMods += +mm[1];
+      if ((mm = m.match(/\+?(\d+) to Armour\b/i))) armourMods += +mm[1];
+      if ((mm = m.match(/\+?(\d+) to Evasion Rating/i))) evasionMods += +mm[1];
+      if ((mm = m.match(/\+?(\d+)% to Fire Resistance/i))) stats.fireRes += +mm[1];
+      if ((mm = m.match(/\+?(\d+)% to Cold Resistance/i))) stats.coldRes += +mm[1];
+      if ((mm = m.match(/\+?(\d+)% to Lightning Resistance/i))) stats.lightRes += +mm[1];
+      if ((mm = m.match(/\+?(\d+)% to Chaos Resistance/i))) stats.chaosRes += +mm[1];
+      if ((mm = m.match(/\+?(\d+)% to all Elemental Resistances/i))) allRes += +mm[1];
+      if ((mm = m.match(/\+?(\d+) to Strength/i))) str += +mm[1];
+      if ((mm = m.match(/\+?(\d+) to Dexterity/i))) dex += +mm[1];
+      if ((mm = m.match(/\+?(\d+) to Intelligence/i))) intel += +mm[1];
+    }
+  }
+  stats.fireRes += allRes;
+  stats.coldRes += allRes;
+  stats.lightRes += allRes;
+
+  // Rough base values from level (PoE2 rule-of-thumb; calc engine refines later)
+  const lvl = charMeta?.level || 1;
+  const baseLife = 50 + 12 * lvl;
+  const baseMana = 50 + 6 * lvl;
+  stats.life = baseLife + lifeMods + Math.floor(str / 2);
+  stats.es = esMods;
+  stats.mana = baseMana + manaMods + Math.floor(intel / 2);
+  stats.armour = armourMods;
+  stats.evasion = evasionMods;
+  stats.str = str || null;
+  stats.dex = dex || null;
+  stats.int = intel || null;
+  return stats;
+}
+
+// ── TAB SWITCHING ───────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.top-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
+  localStorage.setItem(STORAGE_KEYS.visited, '1');
+
+  if (tab === 'welcome') runSetupCheck();
+  if (tab === 'optimizer') {
+    renderOptimizerLeftPanel();
+    renderOptimizerCenterPanel();
+  }
+}
+
+function switchSubtab(sub) {
+  document.querySelectorAll('.subtab').forEach(b => b.classList.toggle('active', b.dataset.subtab === sub));
+  document.querySelectorAll('.subtab-content').forEach(c => c.classList.toggle('active', c.id === `subtab-${sub}`));
+}
+
+// ── SETUP CHECKLIST ─────────────────────────────────────────────────────
+async function runSetupCheck() {
+  const checklist = document.getElementById('setup-checklist');
+  const items = [
+    { id: 'proxy', title: 'Local proxy reachable', state: 'wait', detail: 'Checking <code>http://localhost:3001/health</code>…' },
+    { id: 'posessid', title: 'POESESSID configured', state: 'wait', detail: 'Pending proxy check…' },
+    { id: 'league', title: 'Current league detected', state: 'wait', detail: 'Pending proxy check…' },
+    { id: 'build', title: 'Build loaded', state: 'wait', detail: 'Pending…' },
+    { id: 'oauth', title: 'GGG OAuth connected', state: 'warn', detail: 'Pending GGG approval. POESESSID path is used in the meantime — Phase 1 of the roadmap.' }
+  ];
+
+  function render() {
+    checklist.innerHTML = items.map(it => {
+      const icons = { ok:'✓', fail:'✗', wait:'…', warn:'!' };
+      const actions = {
+        proxy: it.state === 'fail' ? '<button class="check-action" onclick="document.querySelectorAll(\'.collapse\')[0].classList.add(\'open\');document.querySelectorAll(\'.collapse\')[0].scrollIntoView({behavior:\'smooth\'})">SHOW INSTRUCTIONS</button>' : '',
+        posessid: it.state === 'fail' ? '<button class="check-action" onclick="document.querySelectorAll(\'.collapse\')[1].classList.add(\'open\');document.querySelectorAll(\'.collapse\')[1].scrollIntoView({behavior:\'smooth\'})">SHOW INSTRUCTIONS</button>' : '',
+        build: it.state !== 'ok' ? '<button class="check-action primary" onclick="document.getElementById(\'connect-character\').scrollIntoView({behavior:\'smooth\',block:\'center\'})">IMPORT BELOW</button>' : '<button class="check-action" onclick="switchTab(\'optimizer\')">OPEN</button>',
+        oauth: ''
+      };
+      return `
+        <div class="check-item ${it.state}">
+          <div class="check-icon">${icons[it.state] || '?'}</div>
+          <div class="check-body">
+            <div class="check-title">${it.title}</div>
+            <div class="check-detail">${it.detail}</div>
+          </div>
+          <div>${actions[it.id] || ''}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  render();
+
+  // Check proxy + POESESSID + league
+  try {
+    const health = await fetch(PROXY + '/health', { signal: AbortSignal.timeout(3000) }).then(r => r.json());
+    items[0].state = 'ok';
+    items[0].detail = `Connected · rate limit: ${health.rateLimitRemaining || '?'} req/min`;
+    document.getElementById('proxy-dot').className = 'dot dot-on';
+
+    // POESESSID — proxy may or may not report this. If not, mark warn.
+    if (health.posessidValid === true) {
+      items[1].state = 'ok';
+      items[1].detail = 'Valid GGG session cookie detected by proxy.';
+    } else if (health.posessidValid === false) {
+      items[1].state = 'fail';
+      items[1].detail = 'Proxy reports POESESSID missing or invalid. See setup step 2 below.';
+    } else {
+      items[1].state = 'warn';
+      items[1].detail = 'Proxy does not yet report POESESSID validity. Will be wired up in Phase 1.';
+    }
+
+    // League detection — also drives the Connect Character dropdown
+    try {
+      await populateLeagueDropdown();
+      if (leaguesCache.length) {
+        const current = leaguesCache.find(l =>
+          !/^standard$/i.test(l.id) && !/^hardcore$/i.test(l.id) && !/^hc\s/i.test(l.id)
+        ) || leaguesCache[0];
+        items[2].state = 'ok';
+        items[2].detail = `Current league: <code>${current.text}</code> · ${leaguesCache.length} PoE2 league(s) available`;
+        document.getElementById('league-badge').textContent = current.text.toUpperCase();
+        document.getElementById('league-badge').className = 'pill pill-gold';
+      } else {
+        items[2].state = 'fail';
+        items[2].detail = 'Proxy responded but no PoE2 leagues returned.';
+      }
+    } catch(e) {
+      items[2].state = 'fail';
+      items[2].detail = 'Could not fetch league list from proxy.';
+    }
+  } catch(e) {
+    items[0].state = 'fail';
+    items[0].detail = 'Proxy not reachable. Start it with <code>node poe2forge-proxy.js</code>.';
+    items[1].state = 'wait';
+    items[1].detail = 'Cannot check — proxy offline.';
+    items[2].state = 'wait';
+    items[2].detail = 'Cannot check — proxy offline.';
+    document.getElementById('proxy-dot').className = 'dot dot-off';
+    document.getElementById('league-badge').textContent = 'PROXY OFFLINE';
+    document.getElementById('league-badge').className = 'pill pill-red';
+  }
+
+  // Build status
+  if (currentBuild) {
+    items[3].state = 'ok';
+    items[3].detail = `Loaded: <code>${currentBuild.character?.name || 'Unnamed'}</code> · ${currentBuild.character?.class || '?'} · L${currentBuild.character?.level || '?'} · source: ${currentBuild.source || '?'}`;
+  } else {
+    items[3].state = 'fail';
+    items[3].detail = 'No build loaded. Use the <strong>Connect Character</strong> section below to import from your GGG account.';
+  }
+
+  render();
+}
+
+// ── OPTIMIZER LEFT PANEL ────────────────────────────────────────────────
+function renderOptimizerLeftPanel() {
+  const container = document.getElementById('optimizer-left-content');
+  if (!currentBuild) {
+    container.innerHTML = `
+      <div class="empty-left-panel">
+        <div class="icon">⬡</div>
+        <div style="color:var(--text);font-family:'Orbitron',monospace;font-size:11px;letter-spacing:2px;margin-bottom:10px;text-transform:uppercase">No Build Loaded</div>
+        Import a character (Phase 1) or paste a PoB2 code (Phase 2) to populate this panel with your stats, resistances, and upgrade priority controls.
+      </div>
+    `;
+    return;
+  }
+
+  const c = currentBuild.character || {};
+  const s = currentBuild.stats || {};
+
+  const lifeCls = s.life == null ? 'empty' : (s.life < 2000 ? 'bad' : s.life < 3500 ? 'warn' : 'ok');
+  const armourCls = s.armour == null ? 'empty' : (s.armour < 500 ? 'bad' : '');
+
+  container.innerHTML = `
+    <div class="section">
+      <div class="char-name">${c.name || 'Unnamed'}</div>
+      <div class="char-class">L${c.level || '?'} · ${(c.ascendancy || c.class || '').toUpperCase()}${c.league ? ' · ' + c.league.toUpperCase() : ''}</div>
+      <div class="kv-row"><span class="kv-label">Life</span><span class="kv-val ${lifeCls}">${fmtStat(s.life)}</span></div>
+      <div class="kv-row"><span class="kv-label">Energy Shield</span><span class="kv-val">${fmtStat(s.es)}</span></div>
+      <div class="kv-row"><span class="kv-label">Mana</span><span class="kv-val">${fmtStat(s.mana)}</span></div>
+      <div class="kv-row"><span class="kv-label">Armour</span><span class="kv-val ${armourCls}">${fmtStat(s.armour)}</span></div>
+      <div class="kv-row"><span class="kv-label">Evasion</span><span class="kv-val">${fmtStat(s.evasion)}</span></div>
+      <div style="font-size:10px;color:var(--text-muted);padding:6px 0 0;font-style:italic">Stats derived from gear mods · full calc lands in Phase 8</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Resistances</div>
+      <div class="res-rows">
+        ${renderResRow('FIRE', s.fireRes, '#ff4444')}
+        ${renderResRow('COLD', s.coldRes, '#44aaff')}
+        ${renderResRow('LIGHTNING', s.lightRes, '#ffcc00')}
+        ${renderResRow('CHAOS', s.chaosRes, '#9b59b6')}
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Upgrade Priority</div>
+      <div class="slider-rows">
+        ${renderSliderRow('RESISTANCE', 'resistance')}
+        ${renderSliderRow('LIFE', 'life')}
+        ${renderSliderRow('DPS', 'dps')}
+        ${renderSliderRow('DEFENSE', 'defense')}
+        ${renderSliderRow('RARITY / MF', 'mf')}
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Filters</div>
+      <div class="filter-row">
+        <span class="filter-label">Online sellers only</span>
+        <button class="toggle ${filters.onlineOnly ? 'on' : ''}" id="tog-online" onclick="toggleFilter('online')"></button>
+      </div>
+      <div class="filter-row">
+        <span class="filter-label">Instant buyout only</span>
+        <button class="toggle ${filters.instantOnly ? 'on' : ''}" id="tog-instant" onclick="toggleFilter('instant')"></button>
+      </div>
+      <div class="filter-row">
+        <span class="filter-label">Sort by</span>
+        <select class="filter-select" id="sel-sort" onchange="reSort()">
+          <option value="score">Best Score</option>
+          <option value="price">Cheapest</option>
+          <option value="value">Best Value</option>
+          <option value="res">Most Res</option>
+          <option value="life">Most Life</option>
+        </select>
+      </div>
+      <div class="filter-row">
+        <span class="filter-label">Budget (divine)</span>
+        <input type="number" class="budget-input" id="inp-budget" placeholder="no cap" min="0" oninput="reSort()">
+      </div>
+    </div>
+  `;
+}
+
+function fmtStat(v) {
+  if (v == null) return '—';
+  return Number.isFinite(v) ? v.toLocaleString() : v;
+}
+
+function renderSliderRow(label, key) {
+  const v = focus[key];
+  return `<div class="slider-row">
+    <div class="slider-meta"><span class="slider-label">${label}</span><span class="slider-val" id="sv-${key}">${v}</span></div>
+    <input type="range" min="0" max="10" value="${v}" id="sl-${key}" oninput="onSlider('${key}',this.value)">
+  </div>`;
+}
+
+function renderResRow(name, val, color) {
+  if (val == null) {
+    return `<div class="res-row">
+      <span class="res-name">${name}</span>
+      <div class="res-bar-track"></div>
+      <span class="res-pct empty">—</span>
+    </div>`;
+  }
+  const pct = Math.max(0, Math.min(100, val + 60));
+  const cls = val < 0 ? 'neg' : (val < 75 ? 'low' : 'ok');
+  return `<div class="res-row">
+    <span class="res-name">${name}</span>
+    <div class="res-bar-track"><div class="res-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+    <span class="res-pct ${cls}">${val > 0 ? '+' : ''}${val}%</span>
+  </div>`;
+}
+
+// ── OPTIMIZER CENTER PANEL (paperdoll + results view) ───────────────────
+function renderOptimizerCenterPanel() {
+  const container = document.getElementById('optimizer-center-content');
+  if (!currentBuild) {
+    container.innerHTML = `
+      <div class="empty-build-state">
+        <div class="empty-build-icon">⬡</div>
+        <div class="empty-build-title">No Build Loaded</div>
+        <div class="empty-build-detail">
+          The Optimizer needs a character build to analyze. Import one from your GGG account
+          (Phase 1), or paste a Path of Building 2 export code (Phase 2).
+        </div>
+        <button class="empty-build-cta" onclick="switchTab('welcome')">GO TO WELCOME →</button>
+      </div>
+    `;
+    return;
+  }
+
+  if (activeSlot) {
+    renderResultsView(container);
+  } else {
+    renderPaperdollView(container);
+  }
+}
+
+const SLOT_LAYOUT = [
+  { slot: 'weapon',  label: 'WEAPON',      style: 'grid-column:1 / 3; grid-row:1 / 5' },
+  { slot: 'helmet',  label: 'HELMET',      style: 'grid-column:3 / 5; grid-row:1 / 3' },
+  { slot: 'offhand', label: 'OFFHAND',     style: 'grid-column:5 / 7; grid-row:2 / 5' },
+  { slot: 'body',    label: 'BODY ARMOUR', style: 'grid-column:3 / 5; grid-row:3 / 6', extra: 'body-slot' },
+  { slot: 'amulet',  label: 'AMU',         style: 'grid-column:5; grid-row:1' },
+  { slot: 'ring_l',  label: 'RING',        style: 'grid-column:2; grid-row:5' },
+  { slot: 'ring_r',  label: 'RING',        style: 'grid-column:5; grid-row:5' },
+  { slot: 'gloves',  label: 'GLOVES',      style: 'grid-column:1 / 3; grid-row:6' },
+  { slot: 'boots',   label: 'BOOTS',       style: 'grid-column:5 / 7; grid-row:6' },
+  { slot: 'belt',    label: 'BELT',        style: 'grid-column:3 / 5; grid-row:6' },
+];
+
+function renderPaperdollView(container) {
+  const gear = currentBuild.gear || {};
+  const tiles = SLOT_LAYOUT.map(({ slot, label, style, extra }) => {
+    const item = gear[slot];
+    const count = allResults.filter(i => i._slot === slot).length;
+    const hasResults = count > 0;
+    if (!item) {
+      return `<div class="slot-tile empty${hasResults ? ' has-results' : ''}" data-slot="${slot}" onclick="onSlotClick('${slot}')" style="${style}">
+        <div class="slot-label">${label}</div>
+        <div class="slot-icon"></div>
+        <div class="slot-item">empty</div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-${slot}">${hasResults ? count : '—'}</span></div>
+      </div>`;
+    }
+    const rarityCls = item.rarity || 'normal';
+    const icon = item.icon ? `<img src="${item.icon}" alt="${escAttr(item.name||item.typeLine)}" onerror="this.style.display='none'">` : '';
+    return `<div class="slot-tile filled ${rarityCls}${extra ? ' ' + extra : ''}${hasResults ? ' has-results' : ''}" data-slot="${slot}" onclick="onSlotClick('${slot}')" style="${style}">
+      <div class="slot-label">${label}</div>
+      <div class="slot-icon">${icon}</div>
+      <div class="slot-item">${escHtml(item.name || item.typeLine || '')}</div>
+      <div class="slot-meta"><span>iL${item.ilvl ?? '?'}</span><span class="slot-count" id="sc-${slot}">${hasResults ? count : '—'}</span></div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="center-content" id="paperdoll-view">
+      <div class="center-head">
+        <span>Equipment</span>
+        <span class="hint">CLICK A SLOT TO SCAN UPGRADES</span>
+      </div>
+      <div class="paperdoll" id="paperdoll-grid">${tiles}</div>
+      <div class="consumables">
+        <div class="slot-tile display-only empty flask"><div class="slot-label">LIFE</div><div class="slot-icon"></div></div>
+        <div class="slot-tile display-only empty charm"><div class="slot-label">CHARM</div><div class="slot-icon"></div></div>
+        <div class="slot-tile display-only empty charm"><div class="slot-label">CHARM</div><div class="slot-icon"></div></div>
+        <div class="slot-tile display-only empty charm"><div class="slot-label">CHARM</div><div class="slot-icon"></div></div>
+        <div class="slot-tile display-only empty flask"><div class="slot-label">MANA</div><div class="slot-icon"></div></div>
+      </div>
+      <div class="scan-all-bar" style="margin-top:auto">
+        <button class="scan-all-btn" id="scan-btn" onclick="scanAll()">⬡ SCAN ALL UPGRADES</button>
+        <span class="scan-all-status" id="scan-status">${Object.values(gear).filter(Boolean).length}/10 slots equipped</span>
+      </div>
+    </div>
+  `;
+}
+
+function escHtml(s) { return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+
+function renderResultsView(container) {
+  container.innerHTML = `
+    <div class="results-mode">
+      <div class="results-head">
+        <div>
+          <span class="results-head-title">${activeSlot.toUpperCase().replace('_',' ')}</span>
+          <span class="results-head-count" id="results-count"></span>
+        </div>
+        <button class="back-btn" onclick="closeResults()" title="Back to paperdoll (Esc)">×</button>
+      </div>
+      <div class="sort-bar">
+        <div class="sort-chip ${currentSortKey()==='score'?'active':''}" data-sort="score" onclick="setSort('score',this)">SCORE</div>
+        <div class="sort-chip ${currentSortKey()==='price'?'active':''}" data-sort="price" onclick="setSort('price',this)">PRICE</div>
+        <div class="sort-chip ${currentSortKey()==='value'?'active':''}" data-sort="value" onclick="setSort('value',this)">VALUE</div>
+        <div class="sort-chip ${currentSortKey()==='res'?'active':''}" data-sort="res" onclick="setSort('res',this)">RES</div>
+        <div class="sort-chip ${currentSortKey()==='life'?'active':''}" data-sort="life" onclick="setSort('life',this)">LIFE</div>
+      </div>
+      <div class="results-list" id="results-list"></div>
+    </div>
+  `;
+  applyFiltersAndSort();
+}
+
+function currentSortKey() {
+  const sel = document.getElementById('sel-sort');
+  return sel?.value || 'score';
+}
+
+// ── RIGHT PANEL (item detail) ───────────────────────────────────────────
+function renderItemDetailEmpty() {
+  const container = document.getElementById('detail-content');
+  if (!container) return;
+  container.innerHTML = `
+    <div class="empty-build-state" style="padding:40px 20px">
+      <div class="empty-build-icon" style="font-size:48px">⬡</div>
+      <div class="empty-build-title" style="font-size:11px">No item selected</div>
+      <div class="empty-build-detail" style="font-size:12px">
+        ${currentBuild ? 'Click a paperdoll slot, then pick a result to see upgrade analysis.' : 'Load a build first, then scan a slot to see upgrade options here.'}
+      </div>
+    </div>
+  `;
+}
+
+// ── SCORING ENGINE (ported from v5) ─────────────────────────────────────
+function scoreMods(mods) {
+  const raw = (mods || []).join(' ');
+  const scores = { resistance: 0, life: 0, dps: 0, defense: 0, mf: 0 };
+
+  const fireRes  = +((raw.match(/\+?(\d+)%.*?Fire Resistance/i) || [])[1] || 0);
+  const coldRes  = +((raw.match(/\+?(\d+)%.*?Cold Resistance/i) || [])[1] || 0);
+  const lightRes = +((raw.match(/\+?(\d+)%.*?Lightning Resistance/i) || [])[1] || 0);
+  const allRes   = +((raw.match(/\+?(\d+)%.*?all Elemental Resist/i) || [])[1] || 0);
+  const totalRes = fireRes + coldRes + lightRes + allRes * 3;
+  scores.resistance = Math.min(100, (totalRes / 130) * 100);
+  scores._fireRes = fireRes + allRes;
+  scores._coldRes = coldRes + allRes;
+  scores._lightRes = lightRes + allRes;
+  scores._totalRes = totalRes;
+
+  const lifeFlat = +((raw.match(/\+?(\d+) to maximum Life/i) || [])[1] || 0);
+  scores.life = Math.min(100, (lifeFlat / 120) * 100);
+  scores._life = lifeFlat;
+
+  const spell = +((raw.match(/(\d+)%.*?Spell Damage/i) || [])[1] || 0);
+  const cast  = +((raw.match(/(\d+)%.*?Cast Speed/i) || [])[1] || 0);
+  const crit  = +((raw.match(/(\d+)%.*?Critical Hit Chance/i) || [])[1] || 0);
+  const dpsPoints = spell + cast * 2 + crit;
+  scores.dps = Math.min(100, (dpsPoints / 60) * 100);
+
+  const es = +((raw.match(/\+?(\d+) to maximum Energy Shield/i) || [])[1] || 0);
+  const arm = +((raw.match(/\+?(\d+) to Armour/i) || [])[1] || 0);
+  scores.defense = Math.min(100, ((es + arm * 0.5) / 100) * 100);
+  scores._es = es;
+
+  const mf = +((raw.match(/(\d+)%.*?Rarity of Items/i) || [])[1] || 0);
+  const qty = +((raw.match(/(\d+)%.*?Quantity/i) || [])[1] || 0);
+  scores.mf = Math.min(100, ((mf + qty) / 50) * 100);
+
+  return scores;
+}
+
+function weightedScore(scores) {
+  const total = Object.values(focus).reduce((a, b) => a + b, 0) || 1;
+  let weighted = 0;
+  for (const [k, w] of Object.entries(focus)) weighted += (scores[k] || 0) * w;
+  return Math.round(weighted / total);
+}
+
+function scoreItem(item) {
+  const m = scoreMods(item.mods);
+  const ws = weightedScore(m);
+  const priceDiv = toDivine(item.priceAmount, item.priceCurrency);
+  const valueScore = priceDiv > 0 ? Math.round(ws / priceDiv * 10) : ws;
+  return { ...m, weighted: ws, valueScore, priceDiv };
+}
+
+function toDivine(amount, currency) {
+  if (!amount) return 999;
+  const rates = { divine: 1, exalted: 0.05, chaos: 0.005, 'exalted orb': 0.05, 'divine orb': 1 };
+  const rate = rates[(currency || '').toLowerCase()] || 0.005;
+  return Math.max(0.01, amount * rate);
+}
+
+// ── SORT + FILTER ───────────────────────────────────────────────────────
+function applyFiltersAndSort() {
+  let items = activeSlot ? allResults.filter(i => i._slot === activeSlot) : [...allResults];
+  if (filters.onlineOnly) items = items.filter(i => i.online || i.afk);
+  if (filters.instantOnly) items = items.filter(i => i.isInstantBuy);
+
+  const budgetEl = document.getElementById('inp-budget');
+  const budget = budgetEl ? parseFloat(budgetEl.value) : NaN;
+  if (budget > 0) items = items.filter(i => toDivine(i.priceAmount, i.priceCurrency) <= budget);
+
+  items = items.map(i => ({ ...i, _scores: scoreItem(i) }));
+  const sortKey = currentSortKey();
+  items.sort((a, b) => {
+    switch (sortKey) {
+      case 'price': return toDivine(a.priceAmount, a.priceCurrency) - toDivine(b.priceAmount, b.priceCurrency);
+      case 'value': return b._scores.valueScore - a._scores.valueScore;
+      case 'res':   return b._scores._totalRes - a._scores._totalRes;
+      case 'life':  return b._scores._life - a._scores._life;
+      default:      return b._scores.weighted - a._scores.weighted;
+    }
+  });
+  filteredResults = items;
+  if (activeSlot) renderResultsList();
+}
+
+function onSlider(key, val) {
+  focus[key] = parseInt(val);
+  const valEl = document.getElementById(`sv-${key}`);
+  if (valEl) valEl.textContent = val;
+  savePrefs();
+  applyFiltersAndSort();
+}
+
+function toggleFilter(key) {
+  filters[key + 'Only'] = !filters[key + 'Only'];
+  const btn = document.getElementById(`tog-${key}`);
+  if (btn) btn.classList.toggle('on', filters[key + 'Only']);
+  savePrefs();
+  applyFiltersAndSort();
+}
+
+function reSort() { applyFiltersAndSort(); }
+function setSort(key, el) {
+  document.querySelectorAll('.sort-chip').forEach(c => c.classList.remove('active'));
+  if (el) el.classList.add('active');
+  const sel = document.getElementById('sel-sort');
+  if (sel) sel.value = key;
+  applyFiltersAndSort();
+}
+
+// ── RESULTS LIST RENDERING ──────────────────────────────────────────────
+function renderResultsList() {
+  const list = document.getElementById('results-list');
+  const count = document.getElementById('results-count');
+  if (!list) return;
+  if (count) count.textContent = filteredResults.length ? `· ${filteredResults.length} listings` : '';
+  if (!filteredResults.length) {
+    list.innerHTML = `<div class="empty-state" style="padding:50px 20px;text-align:center">
+      <div style="font-size:36px;opacity:0.2">◇</div>
+      <div style="font-family:'Orbitron',monospace;font-size:11px;letter-spacing:2px;color:var(--text-muted);margin-top:10px">NO RESULTS</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Try adjusting filters or running another scan</div>
+    </div>`;
+    return;
+  }
+  list.innerHTML = filteredResults.map((item, idx) => renderResultCard(item, idx)).join('');
+}
+
+function renderResultCard(item, idx) {
+  const sc = item._scores;
+  const isSelected = selectedItem?.id === item.id;
+  const statusTag = item.isInstantBuy
+    ? '<span class="tag tag-instant">INSTANT BUY</span>'
+    : item.online
+      ? (item.afk ? '<span class="tag tag-afk">AFK</span>' : '<span class="tag tag-online">ONLINE</span>')
+      : '<span class="tag tag-offline">OFFLINE</span>';
+  const scoreTag = `<span class="tag tag-score">SCORE ${sc.weighted}</span>`;
+  const segs = [
+    { key: 'resistance', color: '#ff6666' },
+    { key: 'life',       color: '#44cc88' },
+    { key: 'dps',        color: '#6699ff' },
+    { key: 'defense',    color: '#cc88ff' },
+    { key: 'mf',         color: '#ffcc44' },
+  ].map(s => `<div class="score-seg"><div class="score-seg-fill" style="width:${sc[s.key]}%;background:${s.color}"></div></div>`).join('');
+  const keyMods = (item.mods || []).slice(0, 4).map(m => {
+    const hi = /resist|maximum Life|energy shield/i.test(m);
+    return `<div class="rc-mod${hi ? ' hi' : ''}">${escHtml(cleanModText(m))}</div>`;
+  }).join('');
+  return `<div class="result-card${isSelected ? ' selected' : ''}" onclick="selectItem(${idx})">
+    <div class="rc-top">
+      <div class="rc-name ${item.rarity}">${escHtml(item.name || item.typeLine)}</div>
+      <div class="rc-price">${escHtml(item.price || '')}</div>
+    </div>
+    <div class="rc-type">${escHtml(item.typeLine || '')} · ilvl ${item.ilvl || '?'}</div>
+    <div class="rc-score-bar">${segs}</div>
+    <div class="rc-tags">${statusTag}${scoreTag}</div>
+    <div class="rc-key-mods">${keyMods}</div>
+  </div>`;
+}
+
+function selectItem(idx) {
+  selectedItem = filteredResults[idx];
+  renderResultsList();
+  renderItemDetail(selectedItem);
+}
+
+function renderItemDetail(item) {
+  const container = document.getElementById('detail-content');
+  if (!container) return;
+  const sc = item._scores;
+  const s = currentBuild?.stats || {};
+
+  const scoreRows = [
+    { label: 'Resistance', key: 'resistance', color: '#ff6666' },
+    { label: 'Life',       key: 'life',       color: '#44cc88' },
+    { label: 'DPS',        key: 'dps',        color: '#6699ff' },
+    { label: 'Defense',    key: 'defense',    color: '#cc88ff' },
+    { label: 'Rarity/MF',  key: 'mf',         color: '#ffcc44' },
+  ].map(r => `
+    <div class="score-row" style="display:grid;grid-template-columns:90px 1fr 36px;gap:8px;align-items:center">
+      <span style="font-size:11px;color:var(--text-dim)">${r.label}</span>
+      <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;width:${sc[r.key]}%;background:${r.color}"></div></div>
+      <span style="font-family:'Share Tech Mono',monospace;font-size:11px;text-align:right;color:${r.color}">${Math.round(sc[r.key])}</span>
+    </div>`).join('');
+
+  const deltas = [];
+  if (sc._fireRes  > 0) deltas.push({ label: 'Fire Res',  cur: s.fireRes  ?? 0, gain: sc._fireRes,  unit: '%', isRes: true });
+  if (sc._coldRes  > 0) deltas.push({ label: 'Cold Res',  cur: s.coldRes  ?? 0, gain: sc._coldRes,  unit: '%', isRes: true });
+  if (sc._lightRes > 0) deltas.push({ label: 'Light Res', cur: s.lightRes ?? 0, gain: sc._lightRes, unit: '%', isRes: true });
+  if (sc._life     > 0) deltas.push({ label: 'Max Life',  cur: s.life     ?? 0, gain: sc._life,     unit: '' });
+  if (sc._es       > 0) deltas.push({ label: 'Energy Shield', cur: s.es   ?? 0, gain: sc._es,       unit: '' });
+
+  const deltaHtml = deltas.length
+    ? deltas.map(d => {
+        const newVal = d.cur + d.gain;
+        const hitsCap = d.isRes && newVal >= 75;
+        return `<div class="delta-item" style="display:flex;justify-content:space-between;padding:5px 10px;background:var(--surface);border:1px solid var(--border);font-size:12px">
+          <span style="color:var(--text-dim)">${d.label}</span>
+          <span style="font-family:'Share Tech Mono',monospace;font-weight:600;color:var(--green)">
+            ${d.cur < 0 ? d.cur : '+' + d.cur}${d.unit} → ${newVal}${d.unit}${hitsCap ? ' ✓ CAPPED' : ''}
+          </span>
+        </div>`;
+      }).join('')
+    : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">No tracked stat improvements detected</div>';
+
+  const modHtml = (item.mods || []).map(m => {
+    const hi = /resist|maximum Life|energy shield/i.test(m);
+    return `<div style="font-size:13px;padding:2px 0;color:${hi ? 'var(--green)' : 'var(--magic)'};font-weight:${hi ? 600 : 400}">${hi ? '▲ ' : ''}${escHtml(cleanModText(m))}</div>`;
+  }).join('');
+
+  const whisperBtn = item.whisper ? `<button class="action-btn btn-whisper" onclick="copyWhisper()">📋 COPY WHISPER</button>` : '';
+  const tradeBtn = `<button class="action-btn btn-trade" onclick="openTrade()">↗ TRADE SITE</button>`;
+
+  container.innerHTML = `
+    <div class="detail-panel" style="padding:18px 20px">
+      <div class="detail-name ${item.rarity}" style="font-size:22px;font-weight:700;margin-bottom:2px">${escHtml(item.name || item.typeLine)}</div>
+      <div class="detail-type" style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--text-muted);margin-bottom:14px">${escHtml(item.typeLine || '')} · ilvl ${item.ilvl || '?'} · ${escHtml(item.price || '')}</div>
+
+      <div style="margin-bottom:16px">
+        <div style="font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;color:var(--text-muted);margin-bottom:8px">UPGRADE SCORE BREAKDOWN</div>
+        <div style="display:flex;flex-direction:column;gap:6px">${scoreRows}</div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0">
+
+      <div style="font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;color:var(--text-muted);margin-bottom:8px">UPGRADE DELTAS VS YOUR CHARACTER</div>
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:16px">${deltaHtml}</div>
+
+      <div style="font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;color:var(--text-muted);margin-bottom:8px">ALL MODIFIERS</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">${modHtml}</div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0">
+
+      <div style="display:flex;gap:8px">${whisperBtn}${tradeBtn}</div>
+    </div>
+  `;
+}
+
+function copyWhisper() {
+  if (!selectedItem?.whisper) return;
+  navigator.clipboard.writeText(selectedItem.whisper).then(() => toast('Whisper copied — paste into in-game chat', 'ok'));
+}
+
+function openTrade() {
+  window.open('https://www.pathofexile.com/trade2', '_blank');
+}
+
+// ── SLOT CLICK + SCAN ───────────────────────────────────────────────────
+function onSlotClick(slot) {
+  if (activeSlot === slot) { closeResults(); return; }
+  const hasResults = allResults.some(i => i._slot === slot);
+  if (hasResults) {
+    openResults(slot);
+  } else {
+    setSlotState(slot, 'scanning');
+    searchSlot(slot).then(() => openResults(slot));
+  }
+}
+
+function setSlotState(slot, state) {
+  const tile = document.querySelector(`.slot-tile[data-slot="${slot}"]`);
+  if (!tile) return;
+  tile.classList.remove('scanning', 'has-results');
+  if (state) tile.classList.add(state);
+}
+
+function openResults(slot) {
+  activeSlot = slot;
+  renderOptimizerCenterPanel();
+}
+
+function closeResults() {
+  activeSlot = null;
+  selectedItem = null;
+  renderOptimizerCenterPanel();
+  renderItemDetailEmpty();
+}
+
+async function searchSlot(slot) {
+  // ring_l + ring_r both query for "ring" upstream
+  const proxySlot = ({ ring_l: 'ring', ring_r: 'ring' })[slot] || slot;
+  const budgetEl = document.getElementById('inp-budget');
+  const budget = budgetEl ? (parseFloat(budgetEl.value) || null) : null;
+  try {
+    const data = await fetch(PROXY + '/smart-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        league: currentLeague || currentBuild?.character?.league,
+        slot: proxySlot,
+        stats: { ...(currentBuild?.stats || {}), level: currentBuild?.character?.level },
+        budget,
+        rarity: 'rare',
+        poolSize: 20,
+      })
+    }).then(r => r.json());
+
+    if (data?.error) {
+      setSlotState(slot, null);
+      toast('Search failed: ' + (typeof data.error === 'string' ? data.error : data.error.message || 'unknown'), 'err');
+      return;
+    }
+    const tagged = (data.results || []).map(i => ({ ...i, _slot: slot }));
+    allResults = allResults.filter(i => i._slot !== slot).concat(tagged);
+    setSlotState(slot, 'has-results');
+    toast(`${slot.replace('_', ' ')}: ${tagged.length} items loaded`, 'ok');
+  } catch (e) {
+    setSlotState(slot, null);
+    toast('Search failed: ' + e.message, 'err');
+  }
+}
+
+async function scanAll() {
+  const btn = document.getElementById('scan-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'SCANNING...';
+  allResults = [];
+
+  const slots = ['ring_l', 'ring_r', 'amulet', 'helmet', 'body', 'gloves', 'boots', 'belt', 'weapon', 'offhand'];
+  for (const slot of slots) {
+    setSlotState(slot, 'scanning');
+    await searchSlot(slot);
+    await new Promise(r => setTimeout(r, 900)); // be polite to GGG rate limits
+  }
+
+  btn.disabled = false;
+  btn.textContent = '⬡ SCAN ALL UPGRADES';
+  toast('Full scan complete — ' + allResults.length + ' items scored', 'ok');
+}
+
+// ── KEYBOARD ────────────────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && activeSlot) closeResults();
+});
+
+// ── TOAST ───────────────────────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => el.className = 'toast', 3000);
+}
+
+// ── INIT ────────────────────────────────────────────────────────────────
+function init() {
+  // Restore prior build (if any) from localStorage
+  loadStoredBuild();
+  renderBuildBadge();
+
+  // First-time visitors land on Welcome; returning users go to Optimizer
+  // if they have a build, otherwise Welcome.
+  const visited = localStorage.getItem(STORAGE_KEYS.visited);
+  const initialTab = (visited && currentBuild) ? 'optimizer' : 'welcome';
+  switchTab(initialTab);
+}
+
+init();
+</script>
+
+</body>
+</html>

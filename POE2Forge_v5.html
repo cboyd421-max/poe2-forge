@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POE2 FORGE — Build Optimizer v5</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --void: #020108;
+  --deep: #060412;
+  --surface: #0c0a1c;
+  --panel: #100e26;
+  --panel2: #14122e;
+  --border: #1c1836;
+  --border-hi: #2a2558;
+  --blue: #1a8fff;
+  --blue-dim: #0a3060;
+  --blue-glow: rgba(26,143,255,0.12);
+  --blue-glow2: rgba(26,143,255,0.06);
+  --violet: #7b2fff;
+  --violet-glow: rgba(123,47,255,0.1);
+  --gold: #ffd600;
+  --gold-dim: rgba(255,214,0,0.08);
+  --red: #ff2d4a;
+  --red-glow: rgba(255,45,74,0.1);
+  --orange: #ff8c20;
+  --green: #00e676;
+  --green-glow: rgba(0,230,118,0.1);
+  --text: #e8dcc8;
+  --text-dim: #9a8a6a;
+  --text-muted: #3e3828;
+  --rare: #ffe020;
+  --magic: #6090ff;
+  --unique: #ff8c20;
+
+  /* v5 additions */
+  --bg-scene: #0a0612;
+  --panel-bg: rgba(12, 8, 28, 0.85);
+  --panel-bg-strong: rgba(6, 3, 18, 0.92);
+  --panel-bg-light: rgba(20, 14, 46, 0.45);
+  --panel-blur: blur(8px);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg-scene);
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Background scene layer */
+.bg-scene {
+  position: fixed; inset: 0;
+  background: var(--bg-scene);
+  background-image:
+    radial-gradient(ellipse 70% 45% at 50% 30%, rgba(140, 70, 220, 0.20) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 35% at 20% 75%, rgba(80, 30, 180, 0.14) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 30% at 85% 80%, rgba(180, 40, 120, 0.08) 0%, transparent 70%);
+  z-index: 0;
+}
+.bg-scene::after {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(2,1,8,0.55) 0%, rgba(2,1,8,0.1) 35%, rgba(2,1,8,0.1) 65%, rgba(2,1,8,0.75) 100%),
+    repeating-linear-gradient(0deg, transparent, transparent 48px, rgba(255,255,255,0.005) 48px, rgba(255,255,255,0.005) 49px),
+    repeating-linear-gradient(90deg, transparent, transparent 48px, rgba(255,255,255,0.005) 48px, rgba(255,255,255,0.005) 49px);
+  pointer-events: none;
+}
+
+#app { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100vh; }
+
+/* ── HEADER ── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg-strong);
+  backdrop-filter: var(--panel-blur);
+  flex-shrink: 0; z-index: 100;
+}
+
+.logo {
+  font-family: 'Orbitron', monospace; font-size: 20px; font-weight: 900;
+  letter-spacing: 5px; color: var(--blue);
+  text-shadow: 0 0 24px rgba(26,143,255,0.4);
+}
+.logo em { color: var(--gold); font-style: normal; }
+
+.header-center { display: flex; align-items: center; gap: 10px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+
+.pill {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  padding: 3px 10px; letter-spacing: 1px;
+  border: 1px solid; border-radius: 1px;
+}
+.pill-blue { color: var(--blue); border-color: rgba(26,143,255,0.3); background: var(--blue-glow2); }
+.pill-gold { color: var(--gold); border-color: rgba(255,214,0,0.25); background: var(--gold-dim); }
+.pill-green { color: var(--green); border-color: rgba(0,230,118,0.25); background: var(--green-glow); }
+.pill-red { color: var(--red); border-color: rgba(255,45,74,0.3); background: var(--red-glow); }
+
+.dot { width:7px; height:7px; border-radius:50%; transition: all 0.3s; }
+.dot-on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot-off { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.dot-wait { background: var(--text-muted); }
+
+/* ── BODY ── */
+.body {
+  display: grid;
+  grid-template-columns: 280px 1fr 340px;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+}
+
+.panel {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hi) transparent;
+  background: var(--panel-bg);
+  backdrop-filter: var(--panel-blur);
+  border-right: 1px solid var(--border);
+}
+.panel:last-child { border-right: none; border-left: 1px solid var(--border); }
+.panel-center {
+  background: transparent;
+  backdrop-filter: none;
+  border-right: none;
+  position: relative;
+  overflow-y: auto;
+}
+
+.panel-head {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  letter-spacing: 3px; color: var(--text-muted);
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg-strong);
+  position: sticky; top: 0; z-index: 10;
+  text-transform: uppercase;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.panel-head .close-btn {
+  background: transparent; border: 1px solid var(--border-hi);
+  color: var(--text-dim); cursor: pointer;
+  width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+  font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  transition: all 0.15s;
+}
+.panel-head .close-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
+.section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.section-title {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  letter-spacing: 2px; color: var(--text-muted);
+  margin-bottom: 10px; text-transform: uppercase;
+}
+
+/* ── CHARACTER (left panel) ── */
+.char-name { font-size: 17px; font-weight: 700; letter-spacing: 1px; }
+.char-class {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  color: var(--blue); letter-spacing: 2px; margin-top: 2px; margin-bottom: 12px;
+}
+
+.kv-row {
+  display: flex; justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 13px;
+}
+.kv-label { color: var(--text-dim); }
+.kv-val { font-family: 'Share Tech Mono', monospace; font-weight: 600; }
+.kv-val.bad { color: var(--red); }
+.kv-val.warn { color: var(--orange); }
+.kv-val.ok { color: var(--green); }
+
+/* Resistances */
+.res-rows { display: flex; flex-direction: column; gap: 6px; }
+.res-row {
+  display: grid; grid-template-columns: 60px 1fr 48px;
+  align-items: center; gap: 8px;
+}
+.res-name { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
+.res-bar-track { height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden; }
+.res-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+.res-pct {
+  font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  font-weight: 700; text-align: right;
+}
+.res-pct.neg { color: var(--red); }
+.res-pct.low { color: var(--orange); }
+.res-pct.ok { color: var(--green); }
+
+/* Sliders */
+.slider-rows { display: flex; flex-direction: column; gap: 10px; }
+.slider-meta { display: flex; justify-content: space-between; margin-bottom: 5px; }
+.slider-label { font-size: 12px; color: var(--text-dim); letter-spacing: 1px; }
+.slider-val { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--blue); }
+
+input[type=range] {
+  -webkit-appearance: none; width: 100%; height: 3px;
+  background: var(--border-hi); border-radius: 2px; outline: none; cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--blue);
+  box-shadow: 0 0 6px rgba(26,143,255,0.6); cursor: pointer;
+}
+
+/* Filters */
+.filter-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; font-size: 13px;
+}
+.filter-label { color: var(--text-dim); }
+
+.toggle {
+  width: 32px; height: 16px; border-radius: 8px;
+  background: var(--border-hi); cursor: pointer;
+  position: relative; transition: background 0.2s;
+  border: none; outline: none;
+}
+.toggle.on { background: var(--blue); }
+.toggle::after {
+  content: ''; position: absolute;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: white; top: 3px; left: 3px;
+  transition: transform 0.2s;
+}
+.toggle.on::after { transform: translateX(16px); }
+
+.filter-select {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; padding: 3px 6px; outline: none; cursor: pointer;
+}
+.budget-input {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; padding: 3px 8px; width: 80px; outline: none;
+}
+.budget-input:focus { border-color: var(--blue); }
+
+/* ── CENTER PANEL — PAPERDOLL ── */
+.center-content { padding: 20px; height: 100%; display: flex; flex-direction: column; }
+
+.center-head {
+  font-family: 'Orbitron', monospace; font-size: 10px;
+  letter-spacing: 3px; color: var(--text-dim);
+  margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  text-transform: uppercase;
+}
+.center-head .hint { color: var(--blue); font-size: 9px; }
+
+/* Paperdoll layout — mirrors POE2 in-game inventory */
+.paperdoll {
+  display: grid;
+  /* 6 columns x 6 rows of 96px units = matches game's gear slot layout */
+  grid-template-columns: repeat(6, 96px);
+  grid-template-rows: repeat(6, 96px);
+  gap: 8px;
+  justify-content: center;
+  align-content: start;
+  padding-top: 20px;
+}
+
+/* Separate bottom strip for flasks + charms, centered as a flex row */
+.consumables {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 8px;
+  align-self: center;
+}
+.consumables .slot-tile {
+  width: 96px;
+}
+.consumables .flask {
+  width: 96px;
+  height: 200px;
+}
+.consumables .charm {
+  width: 96px;
+  height: 96px;
+}
+
+/* Slot tile */
+.slot-tile {
+  background: var(--panel-bg-light);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: all 0.18s;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.slot-tile:hover {
+  border-color: var(--blue);
+  background: rgba(26,143,255,0.1);
+  transform: translateY(-1px);
+}
+.slot-tile.filled { border-color: var(--border-hi); }
+.slot-tile.filled.rare { border-color: rgba(255,224,32,0.5); background: rgba(255,224,32,0.06); }
+.slot-tile.filled.magic { border-color: rgba(96,144,255,0.5); background: rgba(96,144,255,0.06); }
+.slot-tile.filled.unique { border-color: rgba(255,140,32,0.5); background: rgba(255,140,32,0.06); }
+.slot-tile.empty .slot-item { color: var(--red); }
+.slot-tile.scanning {
+  border-color: var(--violet);
+  background: rgba(123,47,255,0.1);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+.slot-tile.has-results { border-color: var(--green); }
+
+/* Non-interactive slots (flasks, charms) — display only for now */
+.slot-tile.display-only {
+  cursor: default;
+  opacity: 0.55;
+}
+.slot-tile.display-only:hover {
+  border-color: var(--border);
+  background: var(--panel-bg-light);
+  transform: none;
+}
+
+.slot-tile.col-center { grid-column: 3; }
+.slot-tile.body-slot { }
+
+.slot-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  padding: 5px 7px 0;
+  opacity: 0.75;
+}
+.slot-icon {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  min-height: 0;
+}
+.slot-icon img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5));
+}
+.slot-tile.body-slot .slot-icon img { max-height: 100%; }
+.slot-item {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 6px 3px;
+  text-align: center;
+  line-height: 1.15;
+  opacity: 0.9;
+}
+.slot-tile.rare .slot-item { color: var(--rare); }
+.slot-tile.magic .slot-item { color: var(--magic); }
+.slot-tile.unique .slot-item { color: var(--unique); }
+.slot-tile.normal .slot-item { color: #c8c8c8; }
+
+.slot-meta {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  padding: 0 6px 4px;
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+}
+.slot-count { color: var(--blue); }
+.slot-status-scanning { color: #a07fff; }
+
+@keyframes breathe { 0%,100%{opacity:1} 50%{opacity:0.65} }
+
+/* Character silhouette placeholder in the center grid cell */
+.char-silhouette {
+  grid-column: 3;
+  grid-row: 2 / 4;
+  background: transparent;
+  border: 1px dashed rgba(255,255,255,0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: rgba(255,255,255,0.1);
+  min-height: 220px;
+}
+.char-silhouette-icon { font-size: 56px; line-height: 1; }
+.char-silhouette-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,0.15);
+  text-align: center;
+}
+
+.scan-all-bar {
+  margin-top: 18px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(26,143,255,0.08);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(26,143,255,0.25);
+}
+.scan-all-btn {
+  background: transparent;
+  border: none;
+  color: var(--blue);
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  text-transform: uppercase;
+  padding: 0;
+}
+.scan-all-btn:hover { color: #5aafff; }
+.scan-all-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.scan-all-status {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+/* ── CENTER PANEL — RESULTS MODE ── */
+.results-mode {
+  padding: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg-strong);
+  backdrop-filter: var(--panel-blur);
+}
+.results-head-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 12px;
+  letter-spacing: 3px;
+  color: var(--text);
+  text-transform: uppercase;
+}
+.results-head-count {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: 10px;
+}
+.back-btn {
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 14px;
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.back-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
+.sort-bar {
+  display: flex; gap: 4px; padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+  backdrop-filter: var(--panel-blur);
+}
+.sort-chip {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  padding: 3px 9px; border: 1px solid var(--border);
+  color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+}
+.sort-chip:hover { color: var(--text-dim); border-color: var(--border-hi); }
+.sort-chip.active { color: var(--blue); border-color: rgba(26,143,255,0.4); background: var(--blue-glow2); }
+
+.results-list { display: flex; flex-direction: column; overflow-y: auto; flex: 1; }
+
+.result-card {
+  padding: 12px 18px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background 0.12s;
+  background: var(--panel-bg);
+  backdrop-filter: var(--panel-blur);
+}
+.result-card:hover { background: rgba(255,255,255,0.025); }
+.result-card.selected { background: var(--blue-glow2); border-left: 2px solid var(--blue); padding-left: 16px; }
+
+.rc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
+.rc-name { font-size: 14px; font-weight: 700; }
+.rc-name.rare { color: var(--rare); }
+.rc-name.magic { color: var(--magic); }
+.rc-name.unique { color: var(--unique); }
+.rc-name.normal { color: #c8c8c8; }
+
+.rc-price {
+  font-family: 'Orbitron', monospace; font-size: 12px;
+  font-weight: 700; color: var(--gold); white-space: nowrap; margin-left: 6px;
+}
+.rc-type { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-family: 'Share Tech Mono', monospace; }
+
+.rc-score-bar { display: flex; gap: 4px; margin-bottom: 7px; align-items: center; }
+.score-seg { height: 3px; border-radius: 1px; flex: 1; background: var(--border); position: relative; overflow: hidden; }
+.score-seg-fill { height: 100%; border-radius: 1px; transition: width 0.4s ease; }
+
+.rc-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 5px; }
+.tag {
+  font-size: 9px; padding: 2px 6px; border-radius: 1px;
+  letter-spacing: 0.5px; font-family: 'Share Tech Mono', monospace;
+}
+.tag-instant { background: var(--green-glow); color: var(--green); border: 1px solid rgba(0,230,118,0.25); }
+.tag-online { background: rgba(0,230,118,0.06); color: #5a9e78; border: 1px solid rgba(0,230,118,0.15); }
+.tag-afk { background: rgba(255,140,32,0.1); color: var(--orange); border: 1px solid rgba(255,140,32,0.2); }
+.tag-offline { background: rgba(62,56,40,0.3); color: var(--text-muted); border: 1px solid var(--border); }
+.tag-score { background: var(--blue-glow); color: var(--blue); border: 1px solid rgba(26,143,255,0.2); }
+
+.rc-key-mods { display: flex; flex-direction: column; gap: 2px; }
+.rc-mod { font-size: 11px; color: var(--magic); }
+.rc-mod.hi { color: var(--green); font-weight: 600; }
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 50px 20px; gap: 10px; color: var(--text-muted); text-align: center;
+  flex: 1;
+}
+.empty-icon { font-size: 36px; opacity: 0.2; }
+.empty-title { font-family: 'Orbitron', monospace; font-size: 11px; letter-spacing: 2px; }
+
+.loading-shimmer { display: flex; flex-direction: column; gap: 1px; }
+.shimmer-card { height: 90px; background: var(--panel); border-bottom: 1px solid var(--border); animation: shimmer 1.4s ease-in-out infinite; }
+@keyframes shimmer { 0%,100%{opacity:0.5} 50%{opacity:1} }
+
+/* ── RIGHT PANEL — ITEM DETAIL ── */
+.detail-panel { padding: 18px 20px; }
+
+.detail-empty {
+  height: 100%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px; color: var(--text-muted); text-align: center;
+  min-height: 400px;
+}
+.detail-empty-hex { font-size: 64px; opacity: 0.06; line-height: 1; }
+.detail-empty-title { font-family: 'Orbitron', monospace; font-size: 11px; letter-spacing: 2px; }
+
+.detail-name { font-size: 22px; font-weight: 700; margin-bottom: 2px; }
+.detail-name.rare { color: var(--rare); }
+.detail-name.magic { color: var(--magic); }
+.detail-name.unique { color: var(--unique); }
+.detail-name.normal { color: #c8c8c8; }
+
+.detail-type { font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
+
+.score-breakdown { margin-bottom: 16px; }
+.score-title { font-family: 'Orbitron', monospace; font-size: 9px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 8px; }
+.score-rows { display: flex; flex-direction: column; gap: 6px; }
+.score-row { display: grid; grid-template-columns: 90px 1fr 36px; gap: 8px; align-items: center; }
+.score-row-label { font-size: 11px; color: var(--text-dim); }
+.score-row-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.score-row-fill { height: 100%; border-radius: 2px; }
+.score-row-val { font-family: 'Share Tech Mono', monospace; font-size: 11px; text-align: right; }
+
+.detail-divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+
+.mods-title { font-family: 'Orbitron', monospace; font-size: 9px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 8px; }
+.mod-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.detail-mod { font-size: 13px; color: var(--magic); padding: 2px 0; }
+.detail-mod.hi { color: var(--green); font-weight: 600; }
+.detail-mod.hi::before { content: '▲ '; font-size: 10px; }
+
+.delta-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 16px; }
+.delta-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 10px; background: var(--surface); border: 1px solid var(--border);
+  font-size: 12px;
+}
+.delta-label { color: var(--text-dim); }
+.delta-val { font-family: 'Share Tech Mono', monospace; font-weight: 600; }
+.delta-val.pos { color: var(--green); }
+.delta-val.neg { color: var(--red); }
+
+.action-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.action-btn {
+  flex: 1; padding: 10px;
+  font-family: 'Orbitron', monospace; font-size: 10px; letter-spacing: 2px;
+  cursor: pointer; transition: all 0.2s; text-transform: uppercase; border: 1px solid;
+}
+.btn-whisper { background: var(--green-glow); border-color: rgba(0,230,118,0.3); color: var(--green); }
+.btn-whisper:hover { background: rgba(0,230,118,0.18); }
+.btn-instant { background: rgba(255,214,0,0.08); border-color: rgba(255,214,0,0.3); color: var(--gold); }
+.btn-instant:hover { background: rgba(255,214,0,0.16); }
+.btn-trade { background: var(--blue-glow); border-color: rgba(26,143,255,0.3); color: var(--blue); }
+.btn-trade:hover { background: rgba(26,143,255,0.2); }
+
+.trade-steps { background: var(--surface); border: 1px solid var(--border); padding: 12px 14px; }
+.trade-steps-title { font-family: 'Orbitron', monospace; font-size: 9px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 10px; }
+.trade-step { display: flex; gap: 10px; margin-bottom: 8px; font-size: 12px; align-items: flex-start; }
+.step-num {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  color: var(--blue); border: 1px solid rgba(26,143,255,0.3);
+  width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+}
+.step-text { color: var(--text-dim); line-height: 1.4; }
+.step-text strong { color: var(--text); }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  padding: 10px 16px; font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  border: 1px solid; z-index: 999; opacity: 0; transform: translateY(8px);
+  transition: all 0.25s; pointer-events: none; max-width: 280px;
+  background: var(--panel);
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.ok { color: var(--green); border-color: rgba(0,230,118,0.35); }
+.toast.err { color: var(--red); border-color: rgba(255,45,74,0.35); }
+.toast.info { color: var(--blue); border-color: rgba(26,143,255,0.35); }
+</style>
+</head>
+<body>
+
+<div class="bg-scene"></div>
+
+<div id="app">
+
+<!-- HEADER -->
+<header>
+  <div class="logo">POE2 <em>FORGE</em></div>
+  <div class="header-center">
+    <div class="dot dot-wait" id="proxy-dot"></div>
+    <span class="pill pill-gold" id="league-badge">CONNECTING...</span>
+  </div>
+  <div class="header-right">
+    <span class="pill pill-blue" id="rate-badge">12 req/min</span>
+  </div>
+</header>
+
+<!-- BODY -->
+<div class="body">
+
+<!-- LEFT PANEL — CHARACTER + CONTROLS -->
+<div class="panel">
+  <div class="panel-head"><span>Character &amp; Focus</span></div>
+
+  <div class="section">
+    <div class="char-name">Druid Oracle</div>
+    <div class="char-class">LEVEL 94 · FATE OF THE VAAL</div>
+    <div class="kv-row"><span class="kv-label">Life</span><span class="kv-val warn">1,253</span></div>
+    <div class="kv-row"><span class="kv-label">Energy Shield</span><span class="kv-val">249</span></div>
+    <div class="kv-row"><span class="kv-label">Mana</span><span class="kv-val">786</span></div>
+    <div class="kv-row"><span class="kv-label">Armour</span><span class="kv-val bad">0</span></div>
+    <div class="kv-row"><span class="kv-label">Evasion</span><span class="kv-val">8</span></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Resistances</div>
+    <div class="res-rows">
+      <div class="res-row">
+        <span class="res-name">FIRE</span>
+        <div class="res-bar-track"><div class="res-bar-fill" id="bar-fire" style="width:0%;background:#ff4444"></div></div>
+        <span class="res-pct neg" id="rval-fire">−55%</span>
+      </div>
+      <div class="res-row">
+        <span class="res-name">COLD</span>
+        <div class="res-bar-track"><div class="res-bar-fill" id="bar-cold" style="width:0%;background:#44aaff"></div></div>
+        <span class="res-pct neg" id="rval-cold">−55%</span>
+      </div>
+      <div class="res-row">
+        <span class="res-name">LIGHTNING</span>
+        <div class="res-bar-track"><div class="res-bar-fill" id="bar-light" style="width:0%;background:#ffcc00"></div></div>
+        <span class="res-pct neg" id="rval-light">−55%</span>
+      </div>
+      <div class="res-row">
+        <span class="res-name">CHAOS</span>
+        <div class="res-bar-track"><div class="res-bar-fill" id="bar-chaos" style="width:50%;background:#9b59b6"></div></div>
+        <span class="res-pct low" id="rval-chaos">0%</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Upgrade Priority</div>
+    <div class="slider-rows">
+      <div class="slider-row">
+        <div class="slider-meta"><span class="slider-label">RESISTANCE</span><span class="slider-val" id="sv-resistance">10</span></div>
+        <input type="range" min="0" max="10" value="10" id="sl-resistance" oninput="onSlider('resistance',this.value)">
+      </div>
+      <div class="slider-row">
+        <div class="slider-meta"><span class="slider-label">LIFE</span><span class="slider-val" id="sv-life">8</span></div>
+        <input type="range" min="0" max="10" value="8" id="sl-life" oninput="onSlider('life',this.value)">
+      </div>
+      <div class="slider-row">
+        <div class="slider-meta"><span class="slider-label">DPS</span><span class="slider-val" id="sv-dps">4</span></div>
+        <input type="range" min="0" max="10" value="4" id="sl-dps" oninput="onSlider('dps',this.value)">
+      </div>
+      <div class="slider-row">
+        <div class="slider-meta"><span class="slider-label">DEFENSE</span><span class="slider-val" id="sv-defense">3</span></div>
+        <input type="range" min="0" max="10" value="3" id="sl-defense" oninput="onSlider('defense',this.value)">
+      </div>
+      <div class="slider-row">
+        <div class="slider-meta"><span class="slider-label">RARITY / MF</span><span class="slider-val" id="sv-mf">1</span></div>
+        <input type="range" min="0" max="10" value="1" id="sl-mf" oninput="onSlider('mf',this.value)">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Filters</div>
+    <div class="filter-row">
+      <span class="filter-label">Online sellers only</span>
+      <button class="toggle on" id="tog-online" onclick="toggleFilter('online')"></button>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Instant buyout only</span>
+      <button class="toggle" id="tog-instant" onclick="toggleFilter('instant')"></button>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Sort by</span>
+      <select class="filter-select" id="sel-sort" onchange="reSort()">
+        <option value="score">Best Score</option>
+        <option value="price">Cheapest</option>
+        <option value="value">Best Value</option>
+        <option value="res">Most Res</option>
+        <option value="life">Most Life</option>
+      </select>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Budget (divine)</span>
+      <input type="number" class="budget-input" id="inp-budget" placeholder="no cap" min="0">
+    </div>
+  </div>
+</div>
+
+<!-- CENTER PANEL — PAPERDOLL or RESULTS -->
+<div class="panel-center" id="center-panel">
+  <!-- Paperdoll mode (default) -->
+  <div class="center-content" id="paperdoll-view">
+    <div class="center-head">
+      <span>Equipment</span>
+      <span class="hint">CLICK A SLOT TO SCAN UPGRADES</span>
+    </div>
+
+    <div class="paperdoll" id="paperdoll-grid">
+      <!-- Weapon: left edge, 2x4 tall -->
+      <div class="slot-tile filled unique" data-slot="weapon" onclick="onSlotClick('weapon')" style="grid-column:1 / 3; grid-row:1 / 5">
+        <div class="slot-label">WEAPON</div>
+        <div class="slot-icon"><img src="https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvV2VhcG9ucy9PbmVIYW5kV2VhcG9ucy9TY2VwdGVycy9TY2VwdGVyNCIsInciOjIsImgiOjMsInNjYWxlIjoxfV0/c5dc28cb9a/Scepter4.png" alt="Void Sceptre" onerror="this.style.display='none'"></div>
+        <div class="slot-item">Void Sceptre</div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-weapon">—</span></div>
+      </div>
+
+      <!-- Helmet: top-center, 2x2 -->
+      <div class="slot-tile filled rare" data-slot="helmet" onclick="onSlotClick('helmet')" style="grid-column:3 / 5; grid-row:1 / 3">
+        <div class="slot-label">HELMET</div>
+        <div class="slot-icon"><img src="https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvSGVsbWV0cy9IZWxtZXRJbnQ0IiwidyI6MiwiaCI6Miwic2NhbGUiOjF9XQ/d0a1ad3ea5/HelmetInt4.png" alt="Soul Cage" onerror="this.style.display='none'"></div>
+        <div class="slot-item">Soul Cage</div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-helmet">—</span></div>
+      </div>
+
+      <!-- Offhand: right edge, 2x3 (starts row 2 to leave room for amulet at top-right) -->
+      <div class="slot-tile empty" data-slot="offhand" onclick="onSlotClick('offhand')" style="grid-column:5 / 7; grid-row:2 / 5">
+        <div class="slot-label">OFFHAND</div>
+        <div class="slot-icon"></div>
+        <div class="slot-item">empty</div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-offhand">—</span></div>
+      </div>
+
+      <!-- Body Armour: center, 2x3 (rows 3-5) -->
+      <div class="slot-tile filled rare body-slot" data-slot="body" onclick="onSlotClick('body')" style="grid-column:3 / 5; grid-row:3 / 6">
+        <div class="slot-label">BODY ARMOUR</div>
+        <div class="slot-icon"><img src="https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9Cb2R5SW50MTQiLCJ3IjoyLCJoIjozLCJzY2FsZSI6MX1d/0c2c5cd1eb/BodyInt14.png" alt="Vaal Regalia" onerror="this.style.display='none'"></div>
+        <div class="slot-item">Vaal Regalia</div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-body">—</span></div>
+      </div>
+
+      <!-- Amulet: 1x1 in the top-right corner (above offhand) -->
+      <div class="slot-tile empty" data-slot="amulet" onclick="onSlotClick('amulet')" style="grid-column:5; grid-row:1">
+        <div class="slot-label">AMU</div>
+        <div class="slot-icon"></div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-amulet"></span></div>
+      </div>
+
+      <!-- Ring L: just left of body, mid-height (row 5) -->
+      <div class="slot-tile filled magic" data-slot="ring_l" onclick="onSlotClick('ring_l')" style="grid-column:2; grid-row:5">
+        <div class="slot-label">RING</div>
+        <div class="slot-icon"><img src="https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvUmluZzEiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MX1d/c5f2b8aa5d/Ring1.png" alt="Iron Ring" onerror="this.style.display='none'"></div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-ring_l"></span></div>
+      </div>
+
+      <!-- Ring R: just right of body, mid-height (row 5) -->
+      <div class="slot-tile empty" data-slot="ring_r" onclick="onSlotClick('ring_r')" style="grid-column:5; grid-row:5">
+        <div class="slot-label">RING</div>
+        <div class="slot-icon"></div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-ring_r"></span></div>
+      </div>
+
+      <!-- Gloves: bottom-left, 2x1 (row 6) -->
+      <div class="slot-tile filled magic" data-slot="gloves" onclick="onSlotClick('gloves')" style="grid-column:1 / 3; grid-row:6">
+        <div class="slot-label">GLOVES</div>
+        <div class="slot-icon"><img src="https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9HbG92ZXMvR2xvdmVzSW50MSIsInciOjIsImgiOjIsInNjYWxlIjoxfV0/3f4b3f6c2f/GlovesInt1.png" alt="Wool Gloves" onerror="this.style.display='none'"></div>
+        <div class="slot-item">Wool Gloves</div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-gloves">—</span></div>
+      </div>
+
+      <!-- Boots: bottom-right, 2x1 (row 6) -->
+      <div class="slot-tile empty" data-slot="boots" onclick="onSlotClick('boots')" style="grid-column:5 / 7; grid-row:6">
+        <div class="slot-label">BOOTS</div>
+        <div class="slot-icon"></div>
+        <div class="slot-item">empty</div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-boots">—</span></div>
+      </div>
+
+      <!-- Belt: 2 wide x 1 tall, below body (row 6, between gloves and boots) -->
+      <div class="slot-tile empty" data-slot="belt" onclick="onSlotClick('belt')" style="grid-column:3 / 5; grid-row:6">
+        <div class="slot-label">BELT</div>
+        <div class="slot-icon"></div>
+        <div class="slot-meta"><span></span><span class="slot-count" id="sc-belt">—</span></div>
+      </div>
+    </div>
+
+    <!-- Consumables strip: flasks + charms, centered as a flex row below the gear grid -->
+    <div class="consumables">
+      <div class="slot-tile display-only empty flask">
+        <div class="slot-label">LIFE</div>
+        <div class="slot-icon"></div>
+      </div>
+      <div class="slot-tile display-only empty charm">
+        <div class="slot-label">CHARM</div>
+        <div class="slot-icon"></div>
+      </div>
+      <div class="slot-tile display-only empty charm">
+        <div class="slot-label">CHARM</div>
+        <div class="slot-icon"></div>
+      </div>
+      <div class="slot-tile display-only empty charm">
+        <div class="slot-label">CHARM</div>
+        <div class="slot-icon"></div>
+      </div>
+      <div class="slot-tile display-only empty flask">
+        <div class="slot-label">MANA</div>
+        <div class="slot-icon"></div>
+      </div>
+    </div>
+
+    <div class="scan-all-bar" style="margin-top:auto">
+      <button class="scan-all-btn" id="scan-btn" onclick="scanAll()">⬡ SCAN ALL UPGRADES</button>
+      <span class="scan-all-status" id="scan-status">10 slots</span>
+    </div>
+  </div>
+
+  <!-- Results mode (hidden by default) -->
+  <div class="results-mode" id="results-view" style="display:none">
+    <div class="results-head">
+      <div>
+        <span class="results-head-title" id="results-title">RESULTS</span>
+        <span class="results-head-count" id="results-count"></span>
+      </div>
+      <button class="back-btn" onclick="closeResults()" title="Back to paperdoll (Esc)">×</button>
+    </div>
+    <div class="sort-bar">
+      <div class="sort-chip active" data-sort="score" onclick="setSort('score',this)">SCORE</div>
+      <div class="sort-chip" data-sort="price" onclick="setSort('price',this)">PRICE</div>
+      <div class="sort-chip" data-sort="value" onclick="setSort('value',this)">VALUE</div>
+      <div class="sort-chip" data-sort="res" onclick="setSort('res',this)">RES</div>
+      <div class="sort-chip" data-sort="life" onclick="setSort('life',this)">LIFE</div>
+    </div>
+    <div class="results-list" id="results-list"></div>
+  </div>
+</div>
+
+<!-- RIGHT PANEL — ITEM DETAIL -->
+<div class="panel" id="detail-panel">
+  <div class="panel-head"><span>Item Detail</span></div>
+  <div class="detail-panel" id="detail-content">
+    <div class="detail-empty">
+      <div class="detail-empty-hex">⬡</div>
+      <div class="detail-empty-title">SELECT AN ITEM</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;max-width:180px;line-height:1.5">
+        Choose a result from the list to see upgrade analysis and trade options
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const PROXY = 'http://localhost:3001';
+
+const CHAR = {
+  fireRes: -55, coldRes: -55, lightRes: -55, chaosRes: 0,
+  life: 1253, es: 249, mana: 786, armour: 0, evasion: 8
+};
+
+const TARGET = { fireRes: 75, coldRes: 75, lightRes: 75, chaosRes: 0, life: 3000 };
+
+let currentLeague = 'Fate of the Vaal';
+let allResults = []; // flat array of all fetched items with slot attached
+let filteredResults = [];
+let selectedItem = null;
+let currentSort = 'score';
+let activeSlot = null; // currently viewing this slot's results, null = paperdoll mode
+
+// User priorities
+let focus = { resistance: 10, life: 8, dps: 4, defense: 3, mf: 1 };
+let filters = { onlineOnly: true, instantOnly: false };
+
+// ── UTILITIES ─────────────────────────────────────────────────────────────────
+function cleanMod(t) {
+  if (!t) return '';
+  return t.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '$2').replace(/\[([^\]]+)\]/g, '$1').trim();
+}
+
+function toast(msg, type='info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => el.className = 'toast', 3000);
+}
+
+// ── SCORING ENGINE ────────────────────────────────────────────────────────────
+function scoreMods(mods) {
+  const raw = mods.join(' ');
+  const scores = { resistance: 0, life: 0, dps: 0, defense: 0, mf: 0 };
+
+  const fireMatch   = raw.match(/\+?(\d+)%.*?Fire Resistance/i);
+  const coldMatch   = raw.match(/\+?(\d+)%.*?Cold Resistance/i);
+  const lightMatch  = raw.match(/\+?(\d+)%.*?Lightning Resistance/i);
+  const allResMatch = raw.match(/\+?(\d+)%.*?all Elemental Resist/i);
+
+  const fireRes  = parseInt(fireMatch?.[1] || 0);
+  const coldRes  = parseInt(coldMatch?.[1] || 0);
+  const lightRes = parseInt(lightMatch?.[1] || 0);
+  const allRes   = parseInt(allResMatch?.[1] || 0);
+
+  const totalRes = fireRes + coldRes + lightRes + (allRes * 3);
+  scores.resistance = Math.min(100, (totalRes / 130) * 100);
+
+  scores._fireRes  = fireRes + allRes;
+  scores._coldRes  = coldRes + allRes;
+  scores._lightRes = lightRes + allRes;
+  scores._totalRes = totalRes;
+
+  const lifeMatch = raw.match(/\+?(\d+) to maximum Life/i);
+  const lifeFlat  = parseInt(lifeMatch?.[1] || 0);
+  scores.life = Math.min(100, (lifeFlat / 120) * 100);
+  scores._life = lifeFlat;
+
+  const spellMatch = raw.match(/(\d+)%.*?Spell Damage/i);
+  const castMatch  = raw.match(/(\d+)%.*?Cast Speed/i);
+  const critMatch  = raw.match(/(\d+)%.*?Critical Hit Chance/i);
+  const dpsPoints  = parseInt(spellMatch?.[1] || 0) + parseInt(castMatch?.[1] || 0) * 2 + parseInt(critMatch?.[1] || 0);
+  scores.dps = Math.min(100, (dpsPoints / 60) * 100);
+
+  const esMatch  = raw.match(/\+?(\d+) to maximum Energy Shield/i);
+  const armMatch = raw.match(/\+?(\d+) to Armour/i);
+  scores.defense = Math.min(100, ((parseInt(esMatch?.[1]||0) + parseInt(armMatch?.[1]||0) * 0.5) / 100) * 100);
+  scores._es = parseInt(esMatch?.[1] || 0);
+
+  const mfMatch  = raw.match(/(\d+)%.*?Rarity of Items/i);
+  const qtyMatch = raw.match(/(\d+)%.*?Quantity/i);
+  scores.mf = Math.min(100, ((parseInt(mfMatch?.[1]||0) + parseInt(qtyMatch?.[1]||0)) / 50) * 100);
+
+  return scores;
+}
+
+function weightedScore(scores) {
+  const total = Object.values(focus).reduce((a, b) => a + b, 0) || 1;
+  let weighted = 0;
+  for (const [k, w] of Object.entries(focus)) {
+    weighted += (scores[k] || 0) * w;
+  }
+  return Math.round(weighted / total);
+}
+
+function scoreItem(item) {
+  const modScores = scoreMods(item.mods);
+  const ws = weightedScore(modScores);
+  const priceDiv = toDivine(item.priceAmount, item.priceCurrency);
+  const valueScore = priceDiv > 0 ? Math.round(ws / priceDiv * 10) : ws;
+  return { ...modScores, weighted: ws, valueScore, priceDiv };
+}
+
+function toDivine(amount, currency) {
+  if (!amount) return 999;
+  const rates = { divine: 1, exalted: 0.05, chaos: 0.005, 'exalted orb': 0.05, 'divine orb': 1 };
+  const rate = rates[(currency||'').toLowerCase()] || 0.005;
+  return Math.max(0.01, amount * rate);
+}
+
+// ── SORT & FILTER ─────────────────────────────────────────────────────────────
+function applyFiltersAndSort() {
+  let items = activeSlot ? allResults.filter(i => i._slot === activeSlot) : [...allResults];
+
+  if (filters.onlineOnly) items = items.filter(i => i.online || i.afk);
+  if (filters.instantOnly) items = items.filter(i => i.isInstantBuy);
+
+  const budget = parseFloat(document.getElementById('inp-budget').value);
+  if (budget > 0) items = items.filter(i => toDivine(i.priceAmount, i.priceCurrency) <= budget);
+
+  items = items.map(i => ({ ...i, _scores: scoreItem(i) }));
+
+  const sortKey = document.getElementById('sel-sort').value;
+  items.sort((a, b) => {
+    switch(sortKey) {
+      case 'price': return toDivine(a.priceAmount, a.priceCurrency) - toDivine(b.priceAmount, b.priceCurrency);
+      case 'value': return b._scores.valueScore - a._scores.valueScore;
+      case 'res':   return b._scores._totalRes - a._scores._totalRes;
+      case 'life':  return b._scores._life - a._scores._life;
+      default:      return b._scores.weighted - a._scores.weighted;
+    }
+  });
+
+  filteredResults = items;
+  if (activeSlot) renderList();
+}
+
+function onSlider(key, val) {
+  focus[key] = parseInt(val);
+  document.getElementById(`sv-${key}`).textContent = val;
+  applyFiltersAndSort();
+}
+
+function toggleFilter(key) {
+  filters[key + 'Only'] = !filters[key + 'Only'];
+  const btn = document.getElementById(`tog-${key}`);
+  btn.classList.toggle('on', filters[key + 'Only']);
+  applyFiltersAndSort();
+}
+
+function reSort() { applyFiltersAndSort(); }
+function setSort(key, el) {
+  document.querySelectorAll('.sort-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('sel-sort').value = key;
+  applyFiltersAndSort();
+}
+
+// ── VIEW SWITCHING ────────────────────────────────────────────────────────────
+function openResults(slot) {
+  activeSlot = slot;
+  document.getElementById('paperdoll-view').style.display = 'none';
+  document.getElementById('results-view').style.display = 'flex';
+  document.getElementById('results-title').textContent = slot.toUpperCase().replace('_', ' ');
+  applyFiltersAndSort();
+}
+
+function closeResults() {
+  activeSlot = null;
+  document.getElementById('paperdoll-view').style.display = 'flex';
+  document.getElementById('results-view').style.display = 'none';
+  selectedItem = null;
+  renderDetailEmpty();
+}
+
+// ── RENDER LIST ───────────────────────────────────────────────────────────────
+function renderList() {
+  const container = document.getElementById('results-list');
+  const countEl = document.getElementById('results-count');
+  countEl.textContent = filteredResults.length ? `· ${filteredResults.length} listings` : '';
+
+  if (!filteredResults.length) {
+    container.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">◇</div>
+      <div class="empty-title">NO RESULTS</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Try adjusting filters or searching this slot</div>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = filteredResults.map((item, idx) => renderCard(item, idx)).join('');
+}
+
+function renderCard(item, idx) {
+  const sc = item._scores;
+  const isSelected = selectedItem?.id === item.id;
+
+  const statusTag = item.isInstantBuy
+    ? '<span class="tag tag-instant">INSTANT BUY</span>'
+    : item.online
+      ? item.afk
+        ? '<span class="tag tag-afk">AFK</span>'
+        : '<span class="tag tag-online">ONLINE</span>'
+      : '<span class="tag tag-offline">OFFLINE</span>';
+
+  const scoreTag = `<span class="tag tag-score">SCORE ${sc.weighted}</span>`;
+
+  const segs = [
+    { key:'resistance', color:'#ff6666' },
+    { key:'life', color:'#44cc88' },
+    { key:'dps', color:'#6699ff' },
+    { key:'defense', color:'#cc88ff' },
+    { key:'mf', color:'#ffcc44' },
+  ].map(s => `
+    <div class="score-seg">
+      <div class="score-seg-fill" style="width:${sc[s.key]}%;background:${s.color}"></div>
+    </div>`).join('');
+
+  const keyMods = item.mods.slice(0, 4).map(m => {
+    const hi = /resist|maximum Life|energy shield/i.test(m);
+    return `<div class="rc-mod${hi?' hi':''}">${cleanMod(m)}</div>`;
+  }).join('');
+
+  return `<div class="result-card${isSelected?' selected':''}" onclick="selectItem(${idx})">
+    <div class="rc-top">
+      <div class="rc-name ${item.rarity}">${item.name || item.typeLine}</div>
+      <div class="rc-price">${item.price}</div>
+    </div>
+    <div class="rc-type">${item.typeLine || ''} · ilvl ${item.ilvl || '?'}</div>
+    <div class="rc-score-bar">${segs}</div>
+    <div class="rc-tags">${statusTag}${scoreTag}</div>
+    <div class="rc-key-mods">${keyMods}</div>
+  </div>`;
+}
+
+// ── ITEM DETAIL ───────────────────────────────────────────────────────────────
+function selectItem(idx) {
+  selectedItem = filteredResults[idx];
+  renderList();
+  renderDetail(selectedItem);
+}
+
+function renderDetailEmpty() {
+  document.getElementById('detail-content').innerHTML = `
+    <div class="detail-empty">
+      <div class="detail-empty-hex">⬡</div>
+      <div class="detail-empty-title">SELECT AN ITEM</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;max-width:180px;line-height:1.5">
+        Choose a result from the list to see upgrade analysis and trade options
+      </div>
+    </div>`;
+}
+
+function renderDetail(item) {
+  const sc = item._scores;
+  const container = document.getElementById('detail-content');
+
+  const scoreRows = [
+    { label: 'Resistance', key: 'resistance', color: '#ff6666' },
+    { label: 'Life', key: 'life', color: '#44cc88' },
+    { label: 'DPS', key: 'dps', color: '#6699ff' },
+    { label: 'Defense', key: 'defense', color: '#cc88ff' },
+    { label: 'Rarity/MF', key: 'mf', color: '#ffcc44' },
+  ].map(r => `
+    <div class="score-row">
+      <span class="score-row-label">${r.label}</span>
+      <div class="score-row-bar"><div class="score-row-fill" style="width:${sc[r.key]}%;background:${r.color}"></div></div>
+      <span class="score-row-val" style="color:${r.color}">${Math.round(sc[r.key])}</span>
+    </div>`).join('');
+
+  const deltas = [];
+  if (sc._fireRes > 0)  deltas.push({ label: 'Fire Res', cur: CHAR.fireRes, gain: sc._fireRes, unit: '%' });
+  if (sc._coldRes > 0)  deltas.push({ label: 'Cold Res', cur: CHAR.coldRes, gain: sc._coldRes, unit: '%' });
+  if (sc._lightRes > 0) deltas.push({ label: 'Light Res', cur: CHAR.lightRes, gain: sc._lightRes, unit: '%' });
+  if (sc._life > 0)     deltas.push({ label: 'Max Life', cur: CHAR.life, gain: sc._life, unit: '' });
+  if (sc._es > 0)       deltas.push({ label: 'Energy Shield', cur: CHAR.es, gain: sc._es, unit: '' });
+
+  const deltaHtml = deltas.length ? deltas.map(d => {
+    const newVal = d.cur + d.gain;
+    const hitsCap = d.label.includes('Res') && newVal >= 75;
+    return `<div class="delta-item">
+      <span class="delta-label">${d.label}</span>
+      <span class="delta-val pos">
+        ${d.cur < 0 ? d.cur : '+' + d.cur}${d.unit} → ${newVal}${d.unit}
+        ${hitsCap ? ' ✓ CAPPED' : ''}
+      </span>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">No tracked stat improvements detected</div>';
+
+  const modHtml = item.mods.map(m => {
+    const hi = /resist|maximum Life|energy shield/i.test(m);
+    return `<div class="detail-mod${hi?' hi':''}">${cleanMod(m)}</div>`;
+  }).join('');
+
+  const whisperBtn = item.whisper
+    ? `<button class="action-btn btn-whisper" onclick="copyWhisper()">📋 COPY WHISPER</button>`
+    : '';
+  const instantBtn = item.isInstantBuy
+    ? `<button class="action-btn btn-instant" onclick="toast('Open in-game Market Panel and search for this item to instant buy','info')">⚡ INSTANT BUY</button>`
+    : '';
+  const tradeBtn = `<button class="action-btn btn-trade" onclick="openTrade()">↗ TRADE SITE</button>`;
+
+  const isInstant = item.isInstantBuy;
+  const tradeGuide = isInstant ? `
+    <div class="trade-steps">
+      <div class="trade-steps-title">INSTANT BUY FLOW</div>
+      <div class="trade-step"><div class="step-num">1</div><div class="step-text">Press <strong>/</strong> in-game to open the Market Panel</div></div>
+      <div class="trade-step"><div class="step-num">2</div><div class="step-text">Search for the item by name or use filters</div></div>
+      <div class="trade-step"><div class="step-num">3</div><div class="step-text">Click <strong>Buy</strong> — you'll teleport to the seller's hideout automatically</div></div>
+      <div class="trade-step"><div class="step-num">4</div><div class="step-text">Trade completes automatically. Currency deducted + small gold fee</div></div>
+    </div>` : `
+    <div class="trade-steps">
+      <div class="trade-steps-title">WHISPER TRADE FLOW</div>
+      <div class="trade-step"><div class="step-num">1</div><div class="step-text">Click <strong>Copy Whisper</strong> and paste into in-game chat</div></div>
+      <div class="trade-step"><div class="step-num">2</div><div class="step-text">Wait for seller to send a <strong>party invite</strong></div></div>
+      <div class="trade-step"><div class="step-num">3</div><div class="step-text">Accept invite, then click the <strong>blue icon</strong> on their portrait to visit their hideout</div></div>
+      <div class="trade-step"><div class="step-num">4</div><div class="step-text">Trade window opens — hover each item to verify, then both accept</div></div>
+    </div>`;
+
+  container.innerHTML = `
+    <div class="detail-name ${item.rarity}">${item.name || item.typeLine}</div>
+    <div class="detail-type">${item.typeLine || ''} · ilvl ${item.ilvl || '?'} · ${item.price}</div>
+
+    <div class="score-breakdown">
+      <div class="score-title">UPGRADE SCORE BREAKDOWN</div>
+      <div class="score-rows">${scoreRows}</div>
+    </div>
+
+    <hr class="detail-divider">
+
+    <div class="mods-title">UPGRADE DELTAS VS YOUR CHARACTER</div>
+    <div class="delta-list">${deltaHtml}</div>
+
+    <div class="mods-title">ALL MODIFIERS</div>
+    <div class="mod-list">${modHtml}</div>
+
+    <hr class="detail-divider">
+
+    <div class="action-row">${whisperBtn}${instantBtn}${tradeBtn}</div>
+    ${tradeGuide}
+  `;
+}
+
+function copyWhisper() {
+  if (!selectedItem?.whisper) return;
+  navigator.clipboard.writeText(selectedItem.whisper).then(() => toast('Whisper copied — paste into in-game chat', 'ok'));
+}
+
+function openTrade() {
+  if (!selectedItem) return;
+  window.open('https://www.pathofexile.com/trade2', '_blank');
+}
+
+// ── SEARCH ────────────────────────────────────────────────────────────────────
+function onSlotClick(slot) {
+  // If already viewing this slot, close (toggle behavior)
+  if (activeSlot === slot) { closeResults(); return; }
+
+  // Set slot tile to scanning if no cached results
+  const hasResults = allResults.some(i => i._slot === slot);
+  if (!hasResults) {
+    setSlotState(slot, 'scanning');
+    searchSlot(slot).then(() => openResults(slot));
+  } else {
+    openResults(slot);
+  }
+}
+
+function setSlotState(slot, state) {
+  const tile = document.querySelector(`.slot-tile[data-slot="${slot}"]`);
+  if (!tile) return;
+  tile.classList.remove('scanning', 'has-results');
+  if (state === 'scanning') tile.classList.add('scanning');
+  if (state === 'has-results') tile.classList.add('has-results');
+}
+
+async function searchSlot(slot) {
+  // Map the v5 slot keys back to v4 ones the proxy understands
+  const proxySlot = ({ ring_l: 'ring', ring_r: 'ring' })[slot] || slot;
+
+  try {
+    const budget = parseFloat(document.getElementById('inp-budget').value) || null;
+    const data = await fetch(PROXY + '/smart-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        league: currentLeague,
+        slot: proxySlot,
+        stats: CHAR,
+        budget,
+        rarity: 'rare',
+        limit: 10,
+        focus: {
+          resistance: focus.resistance,
+          lifePool: focus.life,
+          dps: focus.dps,
+          defense: focus.defense,
+          mf: focus.mf
+        }
+      })
+    }).then(r => r.json());
+
+    const tagged = (data.results || []).map(i => ({ ...i, _slot: slot }));
+    allResults = allResults.filter(i => i._slot !== slot).concat(tagged);
+
+    const sc = document.getElementById(`sc-${slot}`);
+    if (sc) sc.textContent = data.total ? data.total + '' : '0';
+    setSlotState(slot, 'has-results');
+    toast(`${slot.replace('_',' ')}: ${tagged.length} items loaded`, 'ok');
+
+  } catch(e) {
+    setSlotState(slot, null);
+    toast('Search failed: ' + e.message, 'err');
+  }
+}
+
+async function scanAll() {
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true;
+  btn.textContent = 'SCANNING...';
+  allResults = [];
+
+  const slots = ['ring_l', 'ring_r', 'amulet', 'helmet', 'body', 'gloves', 'boots', 'belt', 'weapon', 'offhand'];
+  for (const slot of slots) {
+    setSlotState(slot, 'scanning');
+    await searchSlot(slot);
+    await new Promise(r => setTimeout(r, 900));
+  }
+
+  btn.disabled = false;
+  btn.textContent = '⬡ SCAN ALL UPGRADES';
+  toast('Full scan complete — ' + allResults.length + ' items scored', 'ok');
+}
+
+// ── KEYBOARD ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && activeSlot) closeResults();
+});
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const [health, leagues] = await Promise.all([
+      fetch(PROXY + '/health').then(r => r.json()),
+      fetch(PROXY + '/leagues').then(r => r.json())
+    ]);
+
+    document.getElementById('proxy-dot').className = 'dot dot-on';
+    document.getElementById('rate-badge').textContent = `${health.rateLimitRemaining || 12} req/min`;
+
+    const leagueList = leagues.result || [];
+    const current = leagueList.find(l =>
+      !l.id.toLowerCase().includes('standard') &&
+      !l.id.toLowerCase().includes('hardcore') &&
+      !l.id.toLowerCase().startsWith('hc')
+    ) || leagueList[0];
+
+    if (current) {
+      currentLeague = current.id;
+      document.getElementById('league-badge').textContent = current.text.toUpperCase();
+    }
+
+    toast('Proxy connected · ' + currentLeague, 'ok');
+  } catch(e) {
+    document.getElementById('proxy-dot').className = 'dot dot-off';
+    document.getElementById('league-badge').textContent = 'PROXY OFFLINE';
+    toast('Start the proxy: node poe2forge-proxy.js', 'err');
+  }
+}
+
+init();
+</script>
+</body>
+</html>

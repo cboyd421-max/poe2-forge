@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POE2 FORGE — Build Optimizer v6</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<!--
+  ────────────────────────────────────────────────────────────────────────────
+  POE2 FORGE v6 — PHASE 0
+  ────────────────────────────────────────────────────────────────────────────
+  Phase 0 deliverables (from POE2Forge_Roadmap.pdf):
+    • Three-tab top-level header: WELCOME / OPTIMIZER / THEORYCRAFT
+    • Welcome tab with first-time setup checklist (live proxy health check)
+    • Shared currentBuild JS state object — single source of truth for all tabs
+    • Optimizer rewired to read from currentBuild — empty state when null
+    • Theorycraft tab with four sub-tab placeholders for Phases 2-5
+    • localStorage flag for first-time vs returning user routing
+    • All v5 trade-market functionality preserved (when a build is loaded)
+
+  currentBuild SCHEMA (modeled on PoB2 XML — locked for Phase 7+ compatibility)
+  ────────────────────────────────────────────────────────────────────────────
+  {
+    source: 'ggg' | 'pob2' | 'gallery' | 'tracker' | null,
+    importedAt: ISO timestamp | null,
+    character: {
+      name, level, class, ascendancy, league
+    },
+    stats: {
+      life, es, mana, armour, evasion,
+      fireRes, coldRes, lightRes, chaosRes,
+      str, dex, int,
+      dps, ehp  // populated by Phase 8 calc engine
+    },
+    gear: {
+      weapon, offhand, helmet, body, gloves, boots,
+      belt, amulet, ring_l, ring_r
+    },        // each slot: { name, typeLine, rarity, ilvl, mods[], implicits[], sockets[] }
+    skills: [ // each: { mainSkill, supports[], slot, gemLevel, quality } ]
+    tree: {
+      ascendancyPath: [],
+      allocatedNodes: [],
+      jewelSockets: [],
+      masteries: []
+    },
+    flasks: [],
+    charms: []
+  }
+  ════════════════════════════════════════════════════════════════════════════
+-->
+<style>
+:root {
+  --void: #020108;
+  --deep: #060412;
+  --surface: #0c0a1c;
+  --panel: #100e26;
+  --panel2: #14122e;
+  --border: #1c1836;
+  --border-hi: #2a2558;
+  --blue: #1a8fff;
+  --blue-dim: #0a3060;
+  --blue-glow: rgba(26,143,255,0.12);
+  --blue-glow2: rgba(26,143,255,0.06);
+  --violet: #7b2fff;
+  --violet-glow: rgba(123,47,255,0.1);
+  --gold: #ffd600;
+  --gold-dim: rgba(255,214,0,0.08);
+  --red: #ff2d4a;
+  --red-glow: rgba(255,45,74,0.1);
+  --orange: #ff8c20;
+  --green: #00e676;
+  --green-glow: rgba(0,230,118,0.1);
+  --text: #e8dcc8;
+  --text-dim: #9a8a6a;
+  --text-muted: #3e3828;
+  --rare: #ffe020;
+  --magic: #6090ff;
+  --unique: #ff8c20;
+
+  --bg-scene: #0a0612;
+  --panel-bg: rgba(12, 8, 28, 0.85);
+  --panel-bg-strong: rgba(6, 3, 18, 0.92);
+  --panel-bg-light: rgba(20, 14, 46, 0.45);
+  --panel-blur: blur(8px);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg-scene);
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.bg-scene {
+  position: fixed; inset: 0;
+  background: var(--bg-scene);
+  background-image:
+    radial-gradient(ellipse 70% 45% at 50% 30%, rgba(140, 70, 220, 0.20) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 35% at 20% 75%, rgba(80, 30, 180, 0.14) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 30% at 85% 80%, rgba(180, 40, 120, 0.08) 0%, transparent 70%);
+  z-index: 0;
+}
+.bg-scene::after {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(2,1,8,0.55) 0%, rgba(2,1,8,0.1) 35%, rgba(2,1,8,0.1) 65%, rgba(2,1,8,0.75) 100%),
+    repeating-linear-gradient(0deg, transparent, transparent 48px, rgba(255,255,255,0.005) 48px, rgba(255,255,255,0.005) 49px),
+    repeating-linear-gradient(90deg, transparent, transparent 48px, rgba(255,255,255,0.005) 48px, rgba(255,255,255,0.005) 49px);
+  pointer-events: none;
+}
+
+#app { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100vh; }
+
+/* ── HEADER ── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg-strong);
+  backdrop-filter: var(--panel-blur);
+  flex-shrink: 0; z-index: 100;
+}
+
+.logo {
+  font-family: 'Orbitron', monospace; font-size: 20px; font-weight: 900;
+  letter-spacing: 5px; color: var(--blue);
+  text-shadow: 0 0 24px rgba(26,143,255,0.4);
+  flex-shrink: 0;
+}
+.logo em { color: var(--gold); font-style: normal; }
+.logo .ver { font-size: 10px; color: var(--text-muted); margin-left: 8px; letter-spacing: 2px; }
+
+/* Top-tab navigation */
+.top-tabs {
+  display: flex; gap: 2px;
+  margin-left: 40px;
+  flex: 1;
+}
+.top-tab {
+  background: transparent; border: none;
+  color: var(--text-dim); cursor: pointer;
+  font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 700;
+  letter-spacing: 3px; padding: 10px 22px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.18s;
+  text-transform: uppercase;
+}
+.top-tab:hover { color: var(--text); }
+.top-tab.active {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+  text-shadow: 0 0 12px rgba(26,143,255,0.5);
+}
+.top-tab .badge-dot {
+  display: inline-block; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--gold);
+  margin-left: 6px; vertical-align: middle;
+  box-shadow: 0 0 6px var(--gold);
+}
+
+.header-center { display: flex; align-items: center; gap: 10px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+
+.pill {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  padding: 3px 10px; letter-spacing: 1px;
+  border: 1px solid; border-radius: 1px;
+}
+.pill-blue { color: var(--blue); border-color: rgba(26,143,255,0.3); background: var(--blue-glow2); }
+.pill-gold { color: var(--gold); border-color: rgba(255,214,0,0.25); background: var(--gold-dim); }
+.pill-green { color: var(--green); border-color: rgba(0,230,118,0.25); background: var(--green-glow); }
+.pill-red { color: var(--red); border-color: rgba(255,45,74,0.3); background: var(--red-glow); }
+.pill-muted { color: var(--text-dim); border-color: var(--border-hi); background: transparent; }
+
+.dot { width:7px; height:7px; border-radius:50%; transition: all 0.3s; }
+.dot-on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot-off { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.dot-wait { background: var(--text-muted); }
+
+/* ── TAB CONTENT ── */
+.tab-content {
+  flex: 1;
+  overflow: hidden;
+  display: none;
+}
+.tab-content.active { display: flex; flex-direction: column; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   WELCOME TAB
+   ════════════════════════════════════════════════════════════════════════ */
+.welcome-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px 60px;
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.welcome-hero {
+  text-align: center;
+  padding: 30px 0 50px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 40px;
+}
+.welcome-hero h1 {
+  font-family: 'Orbitron', monospace;
+  font-size: 36px; font-weight: 900;
+  letter-spacing: 8px;
+  color: var(--blue);
+  text-shadow: 0 0 32px rgba(26,143,255,0.4);
+  margin-bottom: 10px;
+}
+.welcome-hero h1 em { color: var(--gold); font-style: normal; }
+.welcome-hero .tagline {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px; letter-spacing: 3px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.welcome-hero .pitch {
+  font-size: 15px;
+  color: var(--text);
+  margin-top: 20px;
+  max-width: 700px;
+  margin-left: auto; margin-right: auto;
+  line-height: 1.6;
+}
+
+.welcome-section {
+  margin-bottom: 40px;
+}
+.welcome-section-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 12px; letter-spacing: 4px;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Setup checklist */
+.checklist {
+  display: flex; flex-direction: column;
+  gap: 8px;
+}
+.check-item {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 18px;
+  background: var(--panel-bg-light);
+  border: 1px solid var(--border);
+  transition: all 0.18s;
+}
+.check-item:hover { border-color: var(--border-hi); }
+.check-item.ok { border-left: 3px solid var(--green); }
+.check-item.fail { border-left: 3px solid var(--red); }
+.check-item.wait { border-left: 3px solid var(--text-muted); }
+.check-item.warn { border-left: 3px solid var(--orange); }
+
+.check-icon {
+  font-family: 'Orbitron', monospace;
+  font-size: 18px; font-weight: 700;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-hi);
+}
+.check-item.ok .check-icon { color: var(--green); border-color: rgba(0,230,118,0.4); background: var(--green-glow); }
+.check-item.fail .check-icon { color: var(--red); border-color: rgba(255,45,74,0.4); background: var(--red-glow); }
+.check-item.wait .check-icon { color: var(--text-dim); }
+.check-item.warn .check-icon { color: var(--orange); border-color: rgba(255,140,32,0.4); background: rgba(255,140,32,0.08); }
+
+.check-body { display: flex; flex-direction: column; gap: 3px; }
+.check-title { font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: 0.5px; }
+.check-detail { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+.check-detail code {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  background: var(--surface);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  color: var(--blue);
+}
+
+.check-action {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.check-action:hover { color: var(--blue); border-color: var(--blue); }
+.check-action.primary { color: var(--gold); border-color: rgba(255,214,0,0.4); }
+.check-action.primary:hover { background: var(--gold-dim); }
+
+/* Re-check button on header */
+.recheck-btn {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  float: right;
+  margin-top: -6px;
+  transition: all 0.15s;
+}
+.recheck-btn:hover { color: var(--blue); border-color: var(--blue); }
+
+/* Info/getting-started cards */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+.info-card {
+  padding: 18px 20px;
+  background: var(--panel-bg-light);
+  border: 1px solid var(--border);
+  transition: all 0.18s;
+}
+.info-card:hover { border-color: var(--border-hi); }
+.info-card-icon {
+  font-family: 'Orbitron', monospace;
+  color: var(--violet);
+  font-size: 24px;
+  margin-bottom: 10px;
+}
+.info-card-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--blue);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.info-card-body {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+.info-card-body code {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  background: var(--surface);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  color: var(--blue);
+}
+.info-card-cta {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid var(--blue);
+  color: var(--blue);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.info-card-cta:hover { background: var(--blue-glow); }
+
+/* Troubleshooting collapsible */
+.collapse {
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+  background: var(--panel-bg-light);
+}
+.collapse-head {
+  padding: 12px 18px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  user-select: none;
+}
+.collapse-head:hover { background: rgba(26,143,255,0.04); }
+.collapse-head::after {
+  content: '+';
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 16px;
+  color: var(--text-dim);
+}
+.collapse.open .collapse-head::after { content: '−'; color: var(--blue); }
+.collapse-body {
+  display: none;
+  padding: 4px 18px 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  border-top: 1px solid var(--border);
+}
+.collapse.open .collapse-body { display: block; }
+.collapse-body code {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  background: var(--surface);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  color: var(--blue);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   OPTIMIZER TAB (preserved from v5 with currentBuild integration)
+   ════════════════════════════════════════════════════════════════════════ */
+.body {
+  display: grid;
+  grid-template-columns: 280px 1fr 340px;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+}
+
+.panel {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hi) transparent;
+  background: var(--panel-bg);
+  backdrop-filter: var(--panel-blur);
+  border-right: 1px solid var(--border);
+}
+.panel:last-child { border-right: none; border-left: 1px solid var(--border); }
+.panel-center {
+  background: transparent;
+  backdrop-filter: none;
+  border-right: none;
+  position: relative;
+  overflow-y: auto;
+}
+
+.panel-head {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  letter-spacing: 3px; color: var(--text-muted);
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg-strong);
+  position: sticky; top: 0; z-index: 10;
+  text-transform: uppercase;
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+.section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.section-title {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  letter-spacing: 2px; color: var(--text-muted);
+  margin-bottom: 10px; text-transform: uppercase;
+}
+
+.char-name { font-size: 17px; font-weight: 700; letter-spacing: 1px; }
+.char-class {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  color: var(--blue); letter-spacing: 2px; margin-top: 2px; margin-bottom: 12px;
+}
+
+.kv-row {
+  display: flex; justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 13px;
+}
+.kv-label { color: var(--text-dim); }
+.kv-val { font-family: 'Share Tech Mono', monospace; font-weight: 600; }
+.kv-val.bad { color: var(--red); }
+.kv-val.warn { color: var(--orange); }
+.kv-val.ok { color: var(--green); }
+.kv-val.empty { color: var(--text-muted); }
+
+.res-rows { display: flex; flex-direction: column; gap: 6px; }
+.res-row {
+  display: grid; grid-template-columns: 60px 1fr 48px;
+  align-items: center; gap: 8px;
+}
+.res-name { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
+.res-bar-track { height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden; }
+.res-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+.res-pct {
+  font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  font-weight: 700; text-align: right;
+}
+.res-pct.neg { color: var(--red); }
+.res-pct.low { color: var(--orange); }
+.res-pct.ok { color: var(--green); }
+.res-pct.empty { color: var(--text-muted); }
+
+.slider-rows { display: flex; flex-direction: column; gap: 10px; }
+.slider-meta { display: flex; justify-content: space-between; margin-bottom: 5px; }
+.slider-label { font-size: 12px; color: var(--text-dim); letter-spacing: 1px; }
+.slider-val { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--blue); }
+
+input[type=range] {
+  -webkit-appearance: none; width: 100%; height: 3px;
+  background: var(--border-hi); border-radius: 2px; outline: none; cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--blue);
+  box-shadow: 0 0 6px rgba(26,143,255,0.6); cursor: pointer;
+}
+input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.filter-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; font-size: 13px;
+}
+.filter-label { color: var(--text-dim); }
+
+.toggle {
+  width: 32px; height: 16px; border-radius: 8px;
+  background: var(--border-hi); cursor: pointer;
+  position: relative; transition: background 0.2s;
+  border: none; outline: none;
+}
+.toggle.on { background: var(--blue); }
+.toggle::after {
+  content: ''; position: absolute;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: white; top: 3px; left: 3px;
+  transition: transform 0.2s;
+}
+.toggle.on::after { transform: translateX(16px); }
+
+.filter-select {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; padding: 3px 6px; outline: none; cursor: pointer;
+}
+.budget-input {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; padding: 3px 8px; width: 80px; outline: none;
+}
+
+/* ── EMPTY STATE (when currentBuild is null) ── */
+.empty-build-state {
+  height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center;
+  padding: 60px 40px;
+  gap: 18px;
+}
+.empty-build-icon {
+  font-family: 'Orbitron', monospace;
+  font-size: 72px;
+  color: var(--violet);
+  opacity: 0.3;
+  line-height: 1;
+}
+.empty-build-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 14px; letter-spacing: 3px;
+  color: var(--text);
+  text-transform: uppercase;
+}
+.empty-build-detail {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  max-width: 380px;
+}
+.empty-build-cta {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px; letter-spacing: 3px;
+  text-transform: uppercase;
+  padding: 12px 28px;
+  background: var(--blue-glow);
+  border: 1px solid rgba(26,143,255,0.4);
+  color: var(--blue);
+  cursor: pointer;
+  margin-top: 12px;
+  transition: all 0.18s;
+}
+.empty-build-cta:hover {
+  background: rgba(26,143,255,0.18);
+  box-shadow: 0 0 24px rgba(26,143,255,0.3);
+}
+
+.empty-left-panel {
+  padding: 30px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.empty-left-panel .icon { font-size: 32px; opacity: 0.4; margin-bottom: 12px; }
+
+/* ── PAPERDOLL ── */
+.center-content { padding: 20px; height: 100%; display: flex; flex-direction: column; }
+.center-head {
+  font-family: 'Orbitron', monospace; font-size: 10px;
+  letter-spacing: 3px; color: var(--text-dim);
+  margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  text-transform: uppercase;
+}
+.center-head .hint { color: var(--blue); font-size: 9px; }
+
+.paperdoll {
+  display: grid;
+  grid-template-columns: repeat(6, 96px);
+  grid-template-rows: repeat(6, 96px);
+  gap: 8px;
+  justify-content: center;
+  align-content: start;
+  padding-top: 20px;
+}
+
+.consumables {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  align-self: center;
+}
+.consumables .flask { width: 96px; height: 200px; }
+.consumables .charm { width: 96px; height: 96px; }
+
+.slot-tile {
+  background: var(--panel-bg-light);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: all 0.18s;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.slot-tile:hover {
+  border-color: var(--blue);
+  background: rgba(26,143,255,0.1);
+}
+.slot-tile.filled { border-color: var(--border-hi); }
+.slot-tile.filled.rare { border-color: rgba(255,224,32,0.5); background: rgba(255,224,32,0.06); }
+.slot-tile.filled.magic { border-color: rgba(96,144,255,0.5); background: rgba(96,144,255,0.06); }
+.slot-tile.filled.unique { border-color: rgba(255,140,32,0.5); background: rgba(255,140,32,0.06); }
+.slot-tile.empty .slot-item { color: var(--red); }
+.slot-tile.disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+.slot-tile.display-only { cursor: default; opacity: 0.55; }
+.slot-tile.scanning {
+  border-color: var(--violet);
+  background: rgba(123,47,255,0.1);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+.slot-tile.has-results { border-color: var(--green); }
+
+.slot-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  padding: 5px 7px 0;
+  opacity: 0.75;
+}
+.slot-icon { flex: 1; display: flex; align-items: center; justify-content: center; padding: 4px; min-height: 0; }
+.slot-icon img { max-height: 100%; max-width: 100%; object-fit: contain; }
+.slot-item { font-size: 11px; font-weight: 600; padding: 0 6px 3px; text-align: center; line-height: 1.15; opacity: 0.9; }
+.slot-tile.rare .slot-item { color: var(--rare); }
+.slot-tile.magic .slot-item { color: var(--magic); }
+.slot-tile.unique .slot-item { color: var(--unique); }
+.slot-meta {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  padding: 0 6px 4px;
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+}
+.slot-count { color: var(--blue); }
+
+@keyframes breathe { 0%,100%{opacity:1} 50%{opacity:0.65} }
+
+.scan-all-bar {
+  margin-top: 18px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(26,143,255,0.08);
+  border: 1px solid rgba(26,143,255,0.25);
+}
+.scan-all-btn {
+  background: transparent;
+  border: none;
+  color: var(--blue);
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.scan-all-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.scan-all-status {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   THEORYCRAFT TAB (Phase 0 shell — sub-tab placeholders for Phases 2-5)
+   ════════════════════════════════════════════════════════════════════════ */
+.theorycraft-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.subtab-bar {
+  display: flex;
+  background: var(--panel-bg-strong);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+.subtab {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  padding: 14px 24px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+.subtab:hover { color: var(--text); }
+.subtab.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+.subtab .phase-tag {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  letter-spacing: 1px;
+}
+
+.subtab-content {
+  flex: 1;
+  overflow-y: auto;
+  display: none;
+  padding: 40px 60px;
+}
+.subtab-content.active { display: block; }
+
+.placeholder-panel {
+  max-width: 700px;
+  margin: 60px auto;
+  text-align: center;
+  padding: 60px 40px;
+  border: 1px dashed var(--border-hi);
+  background: var(--panel-bg-light);
+}
+.placeholder-icon {
+  font-family: 'Orbitron', monospace;
+  font-size: 48px;
+  color: var(--violet);
+  opacity: 0.4;
+  margin-bottom: 18px;
+}
+.placeholder-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 16px;
+  letter-spacing: 4px;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.placeholder-phase {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--blue);
+  margin-bottom: 18px;
+}
+.placeholder-detail {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.placeholder-spec {
+  text-align: left;
+  margin-top: 24px;
+  padding: 18px 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+.placeholder-spec strong { color: var(--gold); display: block; margin-bottom: 6px; font-family: 'Orbitron', monospace; font-size: 10px; letter-spacing: 2px; }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  padding: 10px 16px; font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  border: 1px solid; z-index: 999; opacity: 0; transform: translateY(8px);
+  transition: all 0.25s; pointer-events: none; max-width: 280px;
+  background: var(--panel);
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.ok { color: var(--green); border-color: rgba(0,230,118,0.35); }
+.toast.err { color: var(--red); border-color: rgba(255,45,74,0.35); }
+.toast.info { color: var(--blue); border-color: rgba(26,143,255,0.35); }
+</style>
+</head>
+<body>
+
+<div class="bg-scene"></div>
+
+<div id="app">
+
+<!-- HEADER -->
+<header>
+  <div class="logo">POE2 <em>FORGE</em><span class="ver">v6</span></div>
+
+  <div class="top-tabs">
+    <button class="top-tab" data-tab="welcome" onclick="switchTab('welcome')">Welcome</button>
+    <button class="top-tab" data-tab="optimizer" onclick="switchTab('optimizer')">Optimizer</button>
+    <button class="top-tab" data-tab="theorycraft" onclick="switchTab('theorycraft')">Theorycraft</button>
+  </div>
+
+  <div class="header-right">
+    <div class="dot dot-wait" id="proxy-dot" title="Proxy status"></div>
+    <span class="pill pill-muted" id="league-badge">PROXY OFFLINE</span>
+    <span class="pill pill-blue" id="build-badge">NO BUILD LOADED</span>
+  </div>
+</header>
+
+<!-- ═════════════════════════ WELCOME TAB ═════════════════════════ -->
+<div class="tab-content" id="tab-welcome">
+  <div class="welcome-container">
+
+    <div class="welcome-hero">
+      <h1>POE2 <em>FORGE</em></h1>
+      <div class="tagline">Build Optimizer · Theorycraft Partner · Market Intelligence</div>
+      <p class="pitch">
+        A Path of Exile 2 build tool combining live trade-market optimization, AI-assisted
+        theorycrafting, and (eventually) a full PoB2 replacement — in one cohesive web app.
+        Currently in Phase 0 of the roadmap.
+      </p>
+    </div>
+
+    <!-- SETUP CHECKLIST -->
+    <div class="welcome-section">
+      <div class="welcome-section-title">
+        First-Time Setup
+        <button class="recheck-btn" onclick="runSetupCheck()">⟳ RE-CHECK</button>
+      </div>
+      <div class="checklist" id="setup-checklist">
+        <!-- Populated by runSetupCheck() -->
+      </div>
+    </div>
+
+    <!-- GETTING STARTED -->
+    <div class="welcome-section">
+      <div class="welcome-section-title">Getting Started</div>
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="info-card-icon">⬡</div>
+          <div class="info-card-title">Optimizer</div>
+          <div class="info-card-body">
+            Scan the live trade market for upgrades to your current gear. Priority sliders
+            weight upgrades by what matters most to you — resistance, life, DPS, defense, or
+            magic find. Requires an imported build.
+          </div>
+          <button class="info-card-cta" onclick="switchTab('optimizer')">OPEN OPTIMIZER →</button>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon">◆</div>
+          <div class="info-card-title">Theorycraft</div>
+          <div class="info-card-body">
+            PoB2 code decoder, curated build gallery, cross-class S-rank scanner, and the
+            Advanced Thaumaturgy alt-quality reference. Phases 2–5 of the roadmap.
+          </div>
+          <button class="info-card-cta" onclick="switchTab('theorycraft')">OPEN THEORYCRAFT →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HOW TO USE -->
+    <div class="welcome-section">
+      <div class="welcome-section-title">How to use POE2 Forge</div>
+
+      <div class="collapse open">
+        <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
+          1 · Start the proxy
+        </div>
+        <div class="collapse-body">
+          The Optimizer needs a local proxy running to talk to the GGG trade API.
+          Open a terminal in the folder containing <code>poe2forge-proxy.js</code> and run:
+          <br><br>
+          <code>node poe2forge-proxy.js</code>
+          <br><br>
+          The proxy listens on <code>http://localhost:3001</code>. The status dot in the
+          top-right corner of the header turns <span style="color:var(--green)">green</span> when it's reachable.
+        </div>
+      </div>
+
+      <div class="collapse">
+        <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
+          2 · Configure your POESESSID
+        </div>
+        <div class="collapse-body">
+          Forge uses your GGG account cookie (POESESSID) to make authenticated trade-API
+          requests. To get it:
+          <br><br>
+          1. Log in to <code>pathofexile.com</code> in your browser<br>
+          2. Open DevTools (F12) → Application → Cookies → pathofexile.com<br>
+          3. Copy the value of the <code>POESESSID</code> cookie<br>
+          4. Paste it into your <code>.env</code> file next to the proxy:<br>
+          &nbsp;&nbsp;&nbsp;<code>POESESSID=your_cookie_value_here</code><br>
+          5. Restart the proxy
+          <br><br>
+          The <code>.env</code> file should already be in your <code>.gitignore</code> — never commit it.
+          Full GGG OAuth flow lands in Phase 1 when GGG approves the app.
+        </div>
+      </div>
+
+      <div class="collapse">
+        <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
+          3 · Import a build (coming Phase 1)
+        </div>
+        <div class="collapse-body">
+          Phase 1 adds a League → Character dropdown right here on the Welcome tab.
+          Pick your character, click Import, and the Optimizer fills with your real gear and stats.
+          <br><br>
+          Until Phase 1 ships, you can preview the Theorycraft tab's sub-tab structure
+          to see what's coming.
+        </div>
+      </div>
+
+      <div class="collapse">
+        <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
+          4 · Troubleshooting
+        </div>
+        <div class="collapse-body">
+          <strong>Proxy offline:</strong> Check the terminal where you ran <code>node poe2forge-proxy.js</code>
+          for errors. Most common: Node version too old (need 18+), or port 3001 already in use.
+          <br><br>
+          <strong>League badge shows "PROXY OFFLINE":</strong> The proxy isn't reachable. Make sure
+          it's running and that nothing else is using port 3001.
+          <br><br>
+          <strong>POESESSID expired:</strong> GGG cookies expire periodically. Re-do step 2 to refresh.
+          <br><br>
+          <strong>Nothing happens when I click a paperdoll slot:</strong> You need an imported build first.
+          Use Welcome → Import (Phase 1) or Theorycraft → PoB Decoder (Phase 2).
+        </div>
+      </div>
+    </div>
+
+    <!-- ROADMAP TEASER -->
+    <div class="welcome-section">
+      <div class="welcome-section-title">Roadmap Status</div>
+      <div class="info-card">
+        <div class="info-card-icon">◇</div>
+        <div class="info-card-title">Current Phase: 0 — Shell &amp; Architecture</div>
+        <div class="info-card-body">
+          Phase 0 establishes the three-tab navigation, shared <code>currentBuild</code> state,
+          and Welcome tab you're reading right now. Next: Phase 1 (POESESSID auth + character import).
+          The full 11-phase roadmap PDF lives alongside this file in the project folder.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═════════════════════════ OPTIMIZER TAB ═════════════════════════ -->
+<div class="tab-content" id="tab-optimizer">
+  <div class="body">
+
+    <!-- LEFT PANEL — CHARACTER + CONTROLS -->
+    <div class="panel" id="optimizer-left">
+      <div class="panel-head"><span>Character &amp; Focus</span></div>
+
+      <!-- This panel's content is rendered by renderOptimizerLeftPanel() based on currentBuild -->
+      <div id="optimizer-left-content"></div>
+    </div>
+
+    <!-- CENTER PANEL -->
+    <div class="panel-center" id="center-panel">
+      <div id="optimizer-center-content"></div>
+    </div>
+
+    <!-- RIGHT PANEL — ITEM DETAIL -->
+    <div class="panel" id="detail-panel">
+      <div class="panel-head"><span>Item Detail</span></div>
+      <div class="detail-panel" id="detail-content">
+        <div class="empty-build-state" style="padding:40px 20px">
+          <div class="empty-build-icon" style="font-size:48px">⬡</div>
+          <div class="empty-build-title" style="font-size:11px">No item selected</div>
+          <div class="empty-build-detail" style="font-size:12px">
+            Load a build first, then scan a slot to see upgrade options here.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═════════════════════════ THEORYCRAFT TAB ═════════════════════════ -->
+<div class="tab-content" id="tab-theorycraft">
+  <div class="theorycraft-container">
+
+    <div class="subtab-bar">
+      <button class="subtab active" data-subtab="pob-decoder" onclick="switchSubtab('pob-decoder')">
+        PoB2 Decoder<span class="phase-tag">P2</span>
+      </button>
+      <button class="subtab" data-subtab="gallery" onclick="switchSubtab('gallery')">
+        Build Gallery<span class="phase-tag">P3</span>
+      </button>
+      <button class="subtab" data-subtab="scanner" onclick="switchSubtab('scanner')">
+        S-Rank Scanner<span class="phase-tag">P4</span>
+      </button>
+      <button class="subtab" data-subtab="alt-quality" onclick="switchSubtab('alt-quality')">
+        Alt-Quality Reference<span class="phase-tag">P5</span>
+      </button>
+    </div>
+
+    <div class="subtab-content active" id="subtab-pob-decoder">
+      <div class="placeholder-panel">
+        <div class="placeholder-icon">⬡</div>
+        <div class="placeholder-title">PoB2 Decoder</div>
+        <div class="placeholder-phase">PHASE 2 · COMING NEXT</div>
+        <div class="placeholder-detail">
+          Paste a Path of Building 2 export code, decode it client-side, and populate the
+          shared build context with the full build — gear, skills, passive tree, ascendancy.
+        </div>
+        <div class="placeholder-spec">
+          <strong>Scope</strong>
+          • Single textarea for PoB2 code input<br>
+          • Client-side decode: base64-urlsafe → zlib inflate → XML parse (via pako)<br>
+          • Maps decoded XML into currentBuild schema<br>
+          • Inline summary display: skills, key gear, ascendancy choices<br>
+          • "Send to Optimizer" button switches tabs and runs upgrade scan
+        </div>
+      </div>
+    </div>
+
+    <div class="subtab-content" id="subtab-gallery">
+      <div class="placeholder-panel">
+        <div class="placeholder-icon">◆</div>
+        <div class="placeholder-title">Build Gallery</div>
+        <div class="placeholder-phase">PHASE 3 · PLANNED</div>
+        <div class="placeholder-detail">
+          Curated, searchable library of launch-ready builds for the current league.
+          Card-based grid; click to load into the shared build context.
+        </div>
+        <div class="placeholder-spec">
+          <strong>Day-one curated set</strong>
+          • Bridget Whirling Assault Martial Artist Monk<br>
+          • Wollie Facebreaker Hollow Form clone build<br>
+          • Spirit Walker Tame Beast minion league-start<br>
+          • Gemling Absent-amulet caster slot abuser<br>
+          • Blood Mage Vitality Siphon (post-leech rework)
+        </div>
+      </div>
+    </div>
+
+    <div class="subtab-content" id="subtab-scanner">
+      <div class="placeholder-panel">
+        <div class="placeholder-icon">◈</div>
+        <div class="placeholder-title">Cross-Class S-Rank Scanner</div>
+        <div class="placeholder-phase">PHASE 4 · PLANNED</div>
+        <div class="placeholder-detail">
+          The signature analytical tool. Pattern-matches builds for the "downside text
+          negated by ascendancy keystone" pattern that produces every recent S-tier build.
+        </div>
+        <div class="placeholder-spec">
+          <strong>Day-one rule pack</strong>
+          • Last Lament Desolate Crossbow + Lich Eternal Life (downside: 300 Life sacrifice)<br>
+          • Rolling Slam + Hollow Form clones (downside: 1s flat attack time)<br>
+          • Vaal Pact sustained-leech detector (post-rework mechanics)<br>
+          • Time of Need + CDR scaling trap warning (Jungroan build dead in 0.5)
+        </div>
+      </div>
+    </div>
+
+    <div class="subtab-content" id="subtab-alt-quality">
+      <div class="placeholder-panel">
+        <div class="placeholder-icon">✦</div>
+        <div class="placeholder-title">Advanced Thaumaturgy Reference</div>
+        <div class="placeholder-phase">PHASE 5 · 5/29 LAUNCH DELIVERABLE</div>
+        <div class="placeholder-detail">
+          Searchable database of every skill gem's hidden Advanced Thaumaturgy alt-quality
+          effect. Datamined from PoE2DB once 0.5 launches.
+        </div>
+        <div class="placeholder-spec">
+          <strong>Known examples (pre-launch)</strong>
+          • Fireball: normal 2 extra projectiles → alt 10 projectiles in a ring<br>
+          • Explosive Shot: alt grants +2 magazine rounds, removes forced reload<br>
+          • Wires into Phase 4 scanner: "this Gemling build's main skill alt-quality..."
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═════════════════════════════════════════════════════════════════════════
+// POE2 FORGE v6 — PHASE 0
+// ═════════════════════════════════════════════════════════════════════════
+
+// ── CONFIG ──────────────────────────────────────────────────────────────
+const PROXY = 'http://localhost:3001';
+const STORAGE_KEYS = {
+  visited: 'forge:visited',
+  build: 'forge:currentBuild',
+  prefs: 'forge:prefs'
+};
+
+// ── SHARED BUILD CONTEXT ────────────────────────────────────────────────
+// Single source of truth — Welcome populates it, Optimizer reads it,
+// Theorycraft will write to it (Phase 2+). PoB2-aligned schema.
+let currentBuild = null;
+
+function setCurrentBuild(build) {
+  currentBuild = build;
+  if (build) {
+    try { localStorage.setItem(STORAGE_KEYS.build, JSON.stringify(build)); } catch(e) {}
+  } else {
+    localStorage.removeItem(STORAGE_KEYS.build);
+  }
+  renderBuildBadge();
+  renderOptimizerLeftPanel();
+  renderOptimizerCenterPanel();
+}
+
+function loadStoredBuild() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.build);
+    if (raw) currentBuild = JSON.parse(raw);
+  } catch(e) { currentBuild = null; }
+}
+
+function renderBuildBadge() {
+  const badge = document.getElementById('build-badge');
+  if (currentBuild?.character) {
+    const c = currentBuild.character;
+    badge.textContent = `${c.name || 'Unnamed'} · L${c.level || '?'}`;
+    badge.className = 'pill pill-green';
+  } else {
+    badge.textContent = 'NO BUILD LOADED';
+    badge.className = 'pill pill-blue';
+  }
+}
+
+// ── TAB SWITCHING ───────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.top-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
+  localStorage.setItem(STORAGE_KEYS.visited, '1');
+
+  if (tab === 'welcome') runSetupCheck();
+  if (tab === 'optimizer') {
+    renderOptimizerLeftPanel();
+    renderOptimizerCenterPanel();
+  }
+}
+
+function switchSubtab(sub) {
+  document.querySelectorAll('.subtab').forEach(b => b.classList.toggle('active', b.dataset.subtab === sub));
+  document.querySelectorAll('.subtab-content').forEach(c => c.classList.toggle('active', c.id === `subtab-${sub}`));
+}
+
+// ── SETUP CHECKLIST ─────────────────────────────────────────────────────
+async function runSetupCheck() {
+  const checklist = document.getElementById('setup-checklist');
+  const items = [
+    { id: 'proxy', title: 'Local proxy reachable', state: 'wait', detail: 'Checking <code>http://localhost:3001/health</code>…' },
+    { id: 'posessid', title: 'POESESSID configured', state: 'wait', detail: 'Pending proxy check…' },
+    { id: 'league', title: 'Current league detected', state: 'wait', detail: 'Pending proxy check…' },
+    { id: 'build', title: 'Build loaded', state: 'wait', detail: 'Pending…' },
+    { id: 'oauth', title: 'GGG OAuth connected', state: 'warn', detail: 'Pending GGG approval. POESESSID path is used in the meantime — Phase 1 of the roadmap.' }
+  ];
+
+  function render() {
+    checklist.innerHTML = items.map(it => {
+      const icons = { ok:'✓', fail:'✗', wait:'…', warn:'!' };
+      const actions = {
+        proxy: it.state === 'fail' ? '<button class="check-action" onclick="document.querySelectorAll(\'.collapse\')[0].classList.add(\'open\');document.querySelectorAll(\'.collapse\')[0].scrollIntoView({behavior:\'smooth\'})">SHOW INSTRUCTIONS</button>' : '',
+        posessid: it.state === 'fail' ? '<button class="check-action" onclick="document.querySelectorAll(\'.collapse\')[1].classList.add(\'open\');document.querySelectorAll(\'.collapse\')[1].scrollIntoView({behavior:\'smooth\'})">SHOW INSTRUCTIONS</button>' : '',
+        build: it.state !== 'ok' ? '<button class="check-action primary" onclick="switchTab(\'theorycraft\')">IMPORT BUILD</button>' : '<button class="check-action" onclick="switchTab(\'optimizer\')">OPEN</button>',
+        oauth: ''
+      };
+      return `
+        <div class="check-item ${it.state}">
+          <div class="check-icon">${icons[it.state] || '?'}</div>
+          <div class="check-body">
+            <div class="check-title">${it.title}</div>
+            <div class="check-detail">${it.detail}</div>
+          </div>
+          <div>${actions[it.id] || ''}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  render();
+
+  // Check proxy + POESESSID + league
+  try {
+    const health = await fetch(PROXY + '/health', { signal: AbortSignal.timeout(3000) }).then(r => r.json());
+    items[0].state = 'ok';
+    items[0].detail = `Connected · rate limit: ${health.rateLimitRemaining || '?'} req/min`;
+    document.getElementById('proxy-dot').className = 'dot dot-on';
+
+    // POESESSID — proxy may or may not report this. If not, mark warn.
+    if (health.posessidValid === true) {
+      items[1].state = 'ok';
+      items[1].detail = 'Valid GGG session cookie detected by proxy.';
+    } else if (health.posessidValid === false) {
+      items[1].state = 'fail';
+      items[1].detail = 'Proxy reports POESESSID missing or invalid. See setup step 2 below.';
+    } else {
+      items[1].state = 'warn';
+      items[1].detail = 'Proxy does not yet report POESESSID validity. Will be wired up in Phase 1.';
+    }
+
+    // League detection
+    try {
+      const leagues = await fetch(PROXY + '/leagues').then(r => r.json());
+      const list = leagues.result || [];
+      const current = list.find(l => !l.id.toLowerCase().includes('standard') && !l.id.toLowerCase().includes('hardcore') && !l.id.toLowerCase().startsWith('hc')) || list[0];
+      if (current) {
+        items[2].state = 'ok';
+        items[2].detail = `Current league: <code>${current.text}</code>`;
+        document.getElementById('league-badge').textContent = current.text.toUpperCase();
+        document.getElementById('league-badge').className = 'pill pill-gold';
+      } else {
+        items[2].state = 'fail';
+        items[2].detail = 'Proxy responded but no leagues returned.';
+      }
+    } catch(e) {
+      items[2].state = 'fail';
+      items[2].detail = 'Could not fetch league list from proxy.';
+    }
+  } catch(e) {
+    items[0].state = 'fail';
+    items[0].detail = 'Proxy not reachable. Start it with <code>node poe2forge-proxy.js</code>.';
+    items[1].state = 'wait';
+    items[1].detail = 'Cannot check — proxy offline.';
+    items[2].state = 'wait';
+    items[2].detail = 'Cannot check — proxy offline.';
+    document.getElementById('proxy-dot').className = 'dot dot-off';
+    document.getElementById('league-badge').textContent = 'PROXY OFFLINE';
+    document.getElementById('league-badge').className = 'pill pill-red';
+  }
+
+  // Build status
+  if (currentBuild) {
+    items[3].state = 'ok';
+    items[3].detail = `Loaded: <code>${currentBuild.character?.name || 'Unnamed'}</code> · ${currentBuild.character?.class || '?'} · L${currentBuild.character?.level || '?'} · source: ${currentBuild.source || '?'}`;
+  } else {
+    items[3].state = 'fail';
+    items[3].detail = 'No build loaded. Import via Theorycraft → PoB2 Decoder (Phase 2) or Welcome → Import Character (Phase 1).';
+  }
+
+  render();
+}
+
+// ── OPTIMIZER PANEL RENDERING ───────────────────────────────────────────
+function renderOptimizerLeftPanel() {
+  const container = document.getElementById('optimizer-left-content');
+  if (!currentBuild) {
+    container.innerHTML = `
+      <div class="empty-left-panel">
+        <div class="icon">⬡</div>
+        <div style="color:var(--text);font-family:'Orbitron',monospace;font-size:11px;letter-spacing:2px;margin-bottom:10px;text-transform:uppercase">No Build Loaded</div>
+        Import a character (Phase 1) or paste a PoB2 code (Phase 2) to populate this panel with your stats, resistances, and upgrade priority controls.
+      </div>
+    `;
+    return;
+  }
+
+  const c = currentBuild.character || {};
+  const s = currentBuild.stats || {};
+  container.innerHTML = `
+    <div class="section">
+      <div class="char-name">${c.name || 'Unnamed'}</div>
+      <div class="char-class">L${c.level || '?'} · ${(c.ascendancy || c.class || '').toUpperCase()}</div>
+      <div class="kv-row"><span class="kv-label">Life</span><span class="kv-val">${s.life ?? '—'}</span></div>
+      <div class="kv-row"><span class="kv-label">Energy Shield</span><span class="kv-val">${s.es ?? '—'}</span></div>
+      <div class="kv-row"><span class="kv-label">Mana</span><span class="kv-val">${s.mana ?? '—'}</span></div>
+      <div class="kv-row"><span class="kv-label">Armour</span><span class="kv-val">${s.armour ?? '—'}</span></div>
+      <div class="kv-row"><span class="kv-label">Evasion</span><span class="kv-val">${s.evasion ?? '—'}</span></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Resistances</div>
+      <div class="res-rows">
+        ${renderResRow('FIRE', s.fireRes, '#ff4444')}
+        ${renderResRow('COLD', s.coldRes, '#44aaff')}
+        ${renderResRow('LIGHTNING', s.lightRes, '#ffcc00')}
+        ${renderResRow('CHAOS', s.chaosRes, '#9b59b6')}
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Upgrade Priority</div>
+      <div style="font-size:11px;color:var(--text-muted);padding:10px 0;text-align:center">
+        Priority sliders return in Phase 1 once character import is wired up.
+      </div>
+    </div>
+  `;
+}
+
+function renderResRow(name, val, color) {
+  if (val == null) {
+    return `<div class="res-row">
+      <span class="res-name">${name}</span>
+      <div class="res-bar-track"></div>
+      <span class="res-pct empty">—</span>
+    </div>`;
+  }
+  const pct = Math.max(0, Math.min(100, val + 60));
+  const cls = val < 0 ? 'neg' : (val < 75 ? 'low' : 'ok');
+  return `<div class="res-row">
+    <span class="res-name">${name}</span>
+    <div class="res-bar-track"><div class="res-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+    <span class="res-pct ${cls}">${val > 0 ? '+' : ''}${val}%</span>
+  </div>`;
+}
+
+function renderOptimizerCenterPanel() {
+  const container = document.getElementById('optimizer-center-content');
+  if (!currentBuild) {
+    container.innerHTML = `
+      <div class="empty-build-state">
+        <div class="empty-build-icon">⬡</div>
+        <div class="empty-build-title">No Build Loaded</div>
+        <div class="empty-build-detail">
+          The Optimizer needs a character build to analyze. Import one from your GGG account
+          (Phase 1), or paste a Path of Building 2 export code (Phase 2).
+        </div>
+        <button class="empty-build-cta" onclick="switchTab('welcome')">GO TO WELCOME →</button>
+      </div>
+    `;
+    return;
+  }
+
+  // When a build is loaded, the v5 paperdoll renders here. For Phase 0 we just
+  // confirm the build is loaded — Phase 1 will fully wire up the paperdoll
+  // against the imported gear data.
+  const c = currentBuild.character || {};
+  container.innerHTML = `
+    <div class="center-content">
+      <div class="center-head">
+        <span>Equipment</span>
+        <span class="hint">PAPERDOLL WIRES UP IN PHASE 1</span>
+      </div>
+      <div class="empty-build-state" style="padding:80px 40px">
+        <div class="empty-build-icon" style="font-size:48px">✓</div>
+        <div class="empty-build-title">Build Loaded</div>
+        <div class="empty-build-detail">
+          <strong style="color:var(--gold)">${c.name || 'Unnamed'}</strong> · ${c.class || '?'} · Level ${c.level || '?'}<br><br>
+          Phase 0 confirms the shared currentBuild context is working. Phase 1 will render
+          the imported gear on the paperdoll and enable per-slot upgrade scanning.
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ── TOAST ───────────────────────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => el.className = 'toast', 3000);
+}
+
+// ── INIT ────────────────────────────────────────────────────────────────
+function init() {
+  // Restore prior build (if any) from localStorage
+  loadStoredBuild();
+  renderBuildBadge();
+
+  // First-time visitors land on Welcome; returning users go to Optimizer
+  // if they have a build, otherwise Welcome.
+  const visited = localStorage.getItem(STORAGE_KEYS.visited);
+  const initialTab = (visited && currentBuild) ? 'optimizer' : 'welcome';
+  switchTab(initialTab);
+}
+
+init();
+</script>
+
+</body>
+</html>

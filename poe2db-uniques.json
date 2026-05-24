@@ -1,0 +1,87 @@
+{
+  "Palm of the Dreamer": {
+    "icon": "icons/OpenPalmOfTheDreamer.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Weapons/OneHandWeapons/Scepters/Uniques/OpenPalmOfTheDreamer.webp",
+    "page": "https://poe2db.tw/us/Palm_of_the_Dreamer"
+  },
+  "Veil of the Night": {
+    "icon": "icons/VeilOfTheNight.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Helmets/Uniques/VeilOfTheNight.webp",
+    "page": "https://poe2db.tw/us/Veil_of_the_Night"
+  },
+  "Rathpith Globe": {
+    "icon": "icons/RathpithGlobe.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Offhand/Foci/Uniques/RathpithGlobe.webp",
+    "page": "https://poe2db.tw/us/Rathpith_Globe"
+  },
+  "The Brass Dome": {
+    "icon": "icons/BrassDome.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/BodyArmours/Uniques/BrassDome.webp",
+    "page": "https://poe2db.tw/us/The_Brass_Dome"
+  },
+  "Headhunter": {
+    "icon": "icons/Headhunter.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Belts/Uniques/Headhunter.webp",
+    "page": "https://poe2db.tw/us/Headhunter"
+  },
+  "Hyrri's Ire": {
+    "icon": "icons/HyrrisIre.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/BodyArmours/Uniques/HyrrisIre.webp",
+    "page": "https://poe2db.tw/us/Hyrri's_Ire"
+  },
+  "Plaguefinger": {
+    "icon": "icons/Plaguefinger.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Gloves/Uniques/Plaguefinger.webp",
+    "page": "https://poe2db.tw/us/Plaguefinger"
+  },
+  "Sine Aequo": {
+    "icon": "icons/SineAequo.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Gloves/Uniques/SineAequo.webp",
+    "page": "https://poe2db.tw/us/Sine_Aequo"
+  },
+  "Olroth's Resolve": {
+    "icon": "icons/OlrothsResolve.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Flasks/Uniques/OlrothsResolve.webp",
+    "page": "https://poe2db.tw/us/Olroth's_Resolve"
+  },
+  "Lavianga's Spirits": {
+    "icon": "icons/LaviangasSpirit.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Flasks/Uniques/LaviangasSpirit.webp",
+    "page": "https://poe2db.tw/us/Lavianga's_Spirits"
+  },
+  "Nascent Hope": {
+    "icon": "icons/ThawingUniqueCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Uniques/ThawingUniqueCharm.webp",
+    "page": "https://poe2db.tw/us/Nascent_Hope"
+  },
+  "Rite of Passage": {
+    "icon": "icons/GoldenUniqueCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Uniques/GoldenUniqueCharm.webp",
+    "page": "https://poe2db.tw/us/Rite_of_Passage"
+  },
+  "The Fall of the Axe": {
+    "icon": "icons/SilverUniqueCharm.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Charms/Uniques/SilverUniqueCharm.webp",
+    "page": "https://poe2db.tw/us/The_Fall_of_the_Axe"
+  },
+  "Atziri's Acuity": {
+    "icon": "icons/AtzirisAcuity.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Gloves/Uniques/AtzirisAcuity.webp",
+    "page": "https://poe2db.tw/us/Atziri's_Acuity"
+  },
+  "Astramentis": {
+    "icon": "icons/Astramentis.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Amulets/Uniques/Astramentis.webp",
+    "page": "https://poe2db.tw/us/Astramentis"
+  },
+  "Original Sin": {
+    "icon": "icons/OriginalSin.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Rings/Uniques/OriginalSin.webp",
+    "page": "https://poe2db.tw/us/Original_Sin"
+  },
+  "Hand of Wisdom and Action": {
+    "icon": "icons/HandOfWisdomAndAction.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Gloves/Uniques/HandOfWisdomAndAction.webp",
+    "page": "https://poe2db.tw/us/Hand_of_Wisdom_and_Action"
+  }
+}
