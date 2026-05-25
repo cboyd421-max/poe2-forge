@@ -12,6 +12,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const { DatabaseSync } = require('node:sqlite');
 
 // Load .env file if present
@@ -482,6 +483,116 @@ function buildSmartQuery(slot, stats, budget) {
   return buildCandidateQuery(slot, stats, budget);
 }
 
+// ── PoB2 BRIDGE (v16) — workaround for PoE2 OAuth gating character API ──────
+// PoB2 has an approved OAuth client and can pull PoE2 characters. We can't
+// replicate that without our own approval, so we launch PoB2 here and let
+// the user do the 5-click import inside its window. The resulting build
+// code is read via clipboard back in the browser (Phase 2 decoder takes it
+// from there).
+function handlePob2Status(res) {
+  const pob2Path = process.env.POB2_PATH || '';
+  const configured = !!pob2Path;
+  let exists = false;
+  try { exists = configured && fs.statSync(pob2Path).isFile(); } catch {}
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    configured,
+    exists,
+    // Don't leak the full path back; just the basename is enough for UI hints.
+    pathHint: configured ? path.basename(pob2Path) : null,
+  }));
+}
+
+function handlePob2Launch(res) {
+  const pob2Path = process.env.POB2_PATH || '';
+  if (!pob2Path) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'POB2_PATH not configured in .env' }));
+  }
+  let stat;
+  try { stat = fs.statSync(pob2Path); } catch {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'POB2_PATH points to a file that does not exist: ' + pob2Path }));
+  }
+  if (!stat.isFile()) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'POB2_PATH is not a file: ' + pob2Path }));
+  }
+  try {
+    const child = spawn(pob2Path, [], {
+      detached: true,
+      stdio: 'ignore',
+      // Launch from PoB2's own directory so it finds its data files.
+      cwd: path.dirname(pob2Path),
+    });
+    child.unref();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'launched', pid: child.pid }));
+  } catch (e) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'spawn failed: ' + e.message }));
+  }
+}
+
+// ── STATIC FILE SERVER (Phase 7C+) ───────────────────────────────────────────
+// Serve project files (HTML, JSON, icons, PDF) from __dirname so the app
+// works at http://localhost:3001/POE2Forge_v15.html — no second server
+// needed. Whitelist-extension only; blocks .env + any dotfile + traversal.
+const STATIC_MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.htm':  'text/html; charset=utf-8',
+  '.js':   'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.css':  'text/css; charset=utf-8',
+  '.pdf':  'application/pdf',
+  '.webp': 'image/webp',
+  '.png':  'image/png',
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif':  'image/gif',
+  '.svg':  'image/svg+xml',
+  '.ico':  'image/x-icon',
+  '.txt':  'text/plain; charset=utf-8',
+  '.map':  'application/json; charset=utf-8',
+};
+
+// Returns true if a response was written (matched + handled). False = let the
+// request fall through to the 404 handler so API misses still look like API
+// misses, not "file not found".
+function serveStatic(reqPath, res) {
+  let rel = decodeURIComponent(reqPath.replace(/^\/+/, ''));
+  if (!rel) rel = 'index.html';
+  const segs = rel.split(/[\\/]+/);
+  // Block dotfiles (no .env, no .git/...) and traversal.
+  if (segs.some(s => s === '..' || s === '.' || s.startsWith('.'))) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden' }));
+    return true;
+  }
+  const ext = path.extname(rel).toLowerCase();
+  if (!STATIC_MIME[ext]) return false;   // unknown ext → not a static route
+  const abs = path.resolve(__dirname, rel);
+  // Final containment guard: resolved path must live under __dirname.
+  if (!abs.startsWith(__dirname + path.sep) && abs !== __dirname) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden' }));
+    return true;
+  }
+  fs.readFile(abs, (err, data) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found', path: rel }));
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': STATIC_MIME[ext],
+      'Cache-Control': 'no-cache',
+    });
+    res.end(data);
+  });
+  return true;
+}
+
 // ── ITEM PARSER ───────────────────────────────────────────────────────────────
 function parseItem(raw) {
   if (!raw?.listing || !raw?.item) return null;
@@ -584,6 +695,16 @@ const server = http.createServer((req, res) => {
     return handleFetch(fetchMatch[1], queryId, league, res);
   }
 
+  // GET /pob2-status (v16 — PoB2 bridge)
+  if (req.method === 'GET' && path === '/pob2-status') {
+    return handlePob2Status(res);
+  }
+
+  // POST /pob2-launch (v16 — spawn PoB2 from POB2_PATH)
+  if (req.method === 'POST' && path === '/pob2-launch') {
+    return handlePob2Launch(res);
+  }
+
   // POST /smart-search
   if (req.method === 'POST' && path === '/smart-search') {
     let body = '';
@@ -595,6 +716,10 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Static-file fall-through (Phase 7C+) — GET requests whose extension is in
+  // STATIC_MIME get served from __dirname. Anything else falls to the 404.
+  if (req.method === 'GET' && serveStatic(path, res)) return;
+
   res.writeHead(404);
   res.end(JSON.stringify({ error: 'Unknown route', path }));
 });
@@ -602,10 +727,14 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log('');
   console.log('╔══════════════════════════════════════════════╗');
-  console.log('║       POE2 FORGE — Trade API Proxy v2.2      ║');
+  console.log('║       POE2 FORGE — Trade API Proxy v2.5      ║');
   console.log(`║       Running on http://localhost:${PORT}       ║`);
   console.log('╠══════════════════════════════════════════════╣');
-  console.log('║  Routes:                                     ║');
+  console.log('║  Open the app:                               ║');
+  console.log(`║   http://localhost:${PORT}/POE2Forge_v16.html   ║`);
+  console.log('║  (or just http://localhost:' + PORT + '/ → redirects) ║');
+  console.log('╠══════════════════════════════════════════════╣');
+  console.log('║  API routes:                                 ║');
   console.log('║  GET  /health           — health + auth      ║');
   console.log('║  GET  /leagues          — available leagues  ║');
   console.log('║  GET  /stats            — stat filter IDs    ║');
@@ -615,7 +744,12 @@ server.listen(PORT, () => {
   console.log('║  POST /search/:league   — search items       ║');
   console.log('║  GET  /fetch/:hashes    — fetch item details ║');
   console.log('║  POST /smart-search     — build-aware search ║');
+  console.log('║  GET  /pob2-status      — PoB2 bridge config ║');
+  console.log('║  POST /pob2-launch      — spawn PoB2 desktop ║');
+  console.log('║  GET  /<file>           — serves HTML/JS/    ║');
+  console.log('║                           JSON/PDF/icons     ║');
   console.log('╚══════════════════════════════════════════════╝');
+  console.log(`POB2_PATH: ${process.env.POB2_PATH || 'not set (PoB2 bridge disabled)'}`);
   console.log(`POESESSID configured: ${POESESSID ? 'yes' : 'NO — set in .env'}`);
   console.log(`POE_ACCOUNT: ${POE_ACCOUNT || 'NOT SET — required for character endpoints'}`);
   console.log('');
