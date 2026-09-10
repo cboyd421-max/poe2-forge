@@ -5968,9 +5968,9 @@ const DOWNSIDE_KEYWORDS = [
 async function loadPoe2dbData() {
   const status = document.getElementById('altq-data-status');
   const results = await Promise.allSettled([
-    fetch('/poe2db-skills.json').then(r => r.ok ? r.json() : {}),
-    fetch('/poe2db-base-types.json').then(r => r.ok ? r.json() : {}),
-    fetch('/poe2db-uniques.json').then(r => r.ok ? r.json() : {}),
+    fetch('./poe2db-skills.json').then(r => r.ok ? r.json() : {}),
+    fetch('./poe2db-base-types.json').then(r => r.ok ? r.json() : {}),
+    fetch('./poe2db-uniques.json').then(r => r.ok ? r.json() : {}),
   ]);
   POE2DB_SKILLS = (results[0].status === 'fulfilled' && results[0].value) || {};
   POE2DB_BASE_TYPES = (results[1].status === 'fulfilled' && results[1].value) || {};
