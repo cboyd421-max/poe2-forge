@@ -3,21 +3,117 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>POE2 FORGE — Build Optimizer v12</title>
+<title>POE2 FORGE — Build Optimizer v17</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <!-- Phase 3: curated build codes loaded from sidecar so the main HTML stays
      editable. window.GALLERY_CODES = { slug: 'eNr...', ... } -->
 <script src="poe2forge-gallery-codes.js" defer></script>
 <!--
   ────────────────────────────────────────────────────────────────────────────
-  POE2 FORGE v12 — PHASE 6 (Phases 1–5 preserved)
+  POE2 FORGE v17 — ToS-COMPLIANCE RELEASE (2026-07-04)
+  Removed every pathofexile.com call outside GGG's documented developer API:
+    • trade2 search/fetch proxying — GONE. The Optimizer now builds the query
+      and deep-links it to the official trade site; the local server only
+      constructs the URL and never contacts pathofexile.com.
+    • POESESSID session-cookie auth — GONE. No GGG credentials of any kind.
+    • character-window/* endpoints — GONE. Import routes through PoB2's
+      GGG-approved OAuth (Forge's own OAuth registration status is
+      unverified; direct import is unavailable).
+    • trade-search SQLite logging — GONE.
+  Price context now comes from the public poe2scout.com API, cached by the
+  local server. See README.md → Compliance.
+
+  POE2 FORGE v16 — PoB2 BRIDGE (Phases 1–7C preserved)
   ────────────────────────────────────────────────────────────────────────────
+  Non-roadmap addition before Phase 7D. The PoE2 character import flow in
+  Phase 1 is gated on GGG OAuth approval — until that lands, the user has
+  no one-click way to pull their live PoE2 character into Forge. This
+  version adds a semi-automated bridge through PoB2 (which DOES have an
+  approved OAuth client):
+    • Welcome tab gains a "Connect via PoB2" section + button.
+    • Forge proxy gets a new POST /pob2-launch endpoint that spawns the
+      PoB2 desktop app via child_process.spawn (path from POB2_PATH in
+      .env). Also GET /pob2-status to check if it's configured.
+    • A wizard modal walks the user through PoB2's import-from-PoE flow
+      (5 clicks inside PoB2's window) and ends with a "Paste from
+      Clipboard" button that reads navigator.clipboard.readText().
+    • The pasted code flows through the existing Phase 2 decoder
+      pipeline and populates currentBuild as if it had been pasted into
+      Theorycraft → PoB2 Decoder manually — but starting from one click
+      on Welcome instead of three tab navigations.
+  Investigation confirmed (PoB2 source: src/Classes/PoEAPI.lua) that PoB2
+  uses GGG's official /character/poe2 endpoint with Authorization: Bearer
+  <OAuth token>. There is no shortcut around OAuth — replicating PoB2's
+  calls directly would need our own approved client ID. So launching PoB2
+  to leverage its OAuth is the realistic path until our own OAuth lands.
+  ────────────────────────────────────────────────────────────────────────────
+  Phase 7C — Passive tree paste-import. Third sub-phase of "Live Build
+  Editor". Smallest of the three so far — the schema already has
+  currentBuild.tree.url from Phase 2's decoder, the synthesize path already
+  emits it, and PoB itself decodes the URL on re-import. This phase just
+  lets the user replace it. Concretely:
+    • "✦ Edit Tree" button in the Optimizer left panel (joins Skills +
+      Export; the row is column-stacked so three buttons fit without
+      crowding).
+    • Tree editor modal shows current URL (clickable, opens in new tab),
+      allocated-node count, tree version. Paste a new URL → best-effort
+      validation (regex against pathofexile.com / pobb.in / poeplanner)
+      + base64 payload size estimate.
+    • Save replaces currentBuild.tree.url, optionally clears the cached
+      allocatedNodes/masteries (since they no longer describe the pasted
+      URL until Phase 8 can decode it against PoE2 tree data), calls
+      markBuildEdited() so Phase 6 export uses the new URL automatically.
+    • Interactive tree picker explicitly deferred to a later phase (per
+      the roadmap PDF) — needs the PoE2 passive tree JSON data, which
+      depends on PoE2DB's post-launch ingest.
+  ────────────────────────────────────────────────────────────────────────────
+  Phase 7B — Skill / support-gem editor. Second sub-phase of "Live Build
+  Editor". Builds on Phase 7A's markBuildEdited() machinery. This delivers:
+    • "EDIT SKILLS" button in the Optimizer left panel (next to Export Build).
+      Opens a modal that lists every gem group on currentBuild.skills with
+      its main skill + supports.
+    • Per-group: enabled toggle (closes the Phase 6 backlog item where
+      synthesize always wrote enabled="true"), mainActive radio across
+      groups, gem level + quality numeric fields, slot label, add/remove
+      support gems, remove entire group, add new group.
+    • In-game-style gem picker: separate overlay with search-as-you-type
+      against POE2DB_SKILLS (Phase 5 data, ~30 active skills today, more
+      after the post-launch re-scrape) plus "Use custom" for any name the
+      index doesn't have. The picker is purely additive — typing into the
+      gem-name input directly also works.
+    • Save mutates currentBuild.skills in place, calls markBuildEdited()
+      (sets editedSinceImport, nulls lastDecodedCode → Phase 6 export
+      auto-synthesizes), then re-renders.
+  Schema growth (allowed — editor functionality, not drift): each skill
+  group now has an `enabled` boolean (default true). Parser reads it from
+  <Skill enabled="..."> at decode; synthesize emits it on the Skill tag
+  AND on each Gem (PoB treats gem-level enabled separately, but for v14
+  we keep group-level as the single source of truth).
+  ────────────────────────────────────────────────────────────────────────────
+  Phase 7A — Gear mod editor. First sub-phase of "Live Build Editor" (PDF
+  flags Phase 7 as long-range, ship in sub-phases). This delivers:
+    • An "EDIT MODE" toggle on the Optimizer paperdoll. While on, clicking
+      any slot opens a modal instead of running a trade scan.
+    • Per-slot mod editor: rarity, name, base (typeLine), item level, plus
+      add/edit/remove of each implicit and explicit mod line.
+    • "Clear slot" to delete the item from currentBuild.gear[slot].
+    • Empty slots show a "+ ADD ITEM" affordance in edit mode.
+  On save we:
+    • write currentBuild.gear[slot] in-place (schema unchanged — locked since
+      Phase 0; Phase 7B/C/D will add similar editors for skills, tree, calcs)
+    • mark currentBuild.editedSinceImport = true → renders "stats stale"
+      pill in the scan-status bar (computed stats came from PoB; once mods
+      change they're no longer trustworthy until the Phase 8 calc engine
+      can recompute them)
+    • null out lastDecodedCode so the Phase 6 exporter automatically falls
+      through from "roundtrip mode" to "synthesize mode" — the original PoB
+      bytes no longer describe this build, so we re-emit fresh XML.
   Phase 6 closes the import/export loop. The Phase 2 decoder turns PoB2
   codes → currentBuild; this phase reverses it: currentBuild → PoB2 code.
   Two paths:
     • PoB-sourced builds (decoded earlier) re-emit their stored original
       code byte-for-byte — lossless round-trip.
-    • Other builds (GGG character import, future Phase 7 editor output)
+    • Other builds (GGG character import, Phase 7 editor output)
       synthesize a minimal PoB2 XML from currentBuild and run it through
       CompressionStream('deflate') + base64-urlsafe. The result is a code
       PoB2 itself can re-import.
@@ -39,7 +135,7 @@
   Two scan modes: read currentBuild, OR pick a manual class+asc+item+skill
   combo. Output is reasoning-grade, not just lists.
   ────────────────────────────────────────────────────────────────────────────
-  Phase 2 deliverables (from POE2Forge_Roadmap.pdf):
+  Phase 2 deliverables (from the original project roadmap):
     • Theorycraft → PoB2 Decoder sub-tab promoted from placeholder to working
     • Client-side decode: base64-urlsafe → DecompressionStream('deflate') → DOMParser
       (zero new deps — built-ins only; pako not bundled)
@@ -1193,12 +1289,622 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
 .export-btn.ghost:hover { color: var(--text); border-color: var(--text-dim); }
 .export-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-/* Optimizer left-panel "Share Build" button */
+/* ── EDIT MODE TOGGLE + SLOT EDIT AFFORDANCE (Phase 7A) ── */
+.center-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.edit-mode-toggle {
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.edit-mode-toggle:hover {
+  color: var(--text);
+  border-color: var(--blue);
+}
+.edit-mode-toggle.active {
+  background: rgba(123,47,255,0.15);
+  border-color: var(--violet);
+  color: var(--violet);
+  box-shadow: 0 0 14px rgba(123,47,255,0.3);
+}
+.slot-tile.editable {
+  border-style: dashed;
+  border-color: var(--violet);
+}
+.slot-tile.editable:hover {
+  border-style: solid;
+  border-color: var(--violet);
+  background: rgba(123,47,255,0.12);
+  box-shadow: 0 0 20px rgba(123,47,255,0.25);
+}
+.slot-tile.editable.empty::after {
+  content: '+ EDIT';
+  position: absolute;
+  top: 4px; right: 4px;
+  font-family: 'Orbitron', monospace;
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: var(--violet);
+  pointer-events: none;
+}
+.stats-stale-pill {
+  display: inline-block;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  padding: 2px 7px;
+  margin-left: 8px;
+  color: var(--orange);
+  border: 1px solid rgba(255,140,32,0.4);
+  background: rgba(255,140,32,0.08);
+  text-transform: uppercase;
+  cursor: help;
+}
+
+/* ── SLOT EDITOR MODAL (Phase 7A) — reuses export-overlay/modal skeleton ── */
+.slot-editor-modal { border-color: var(--violet) !important; box-shadow: 0 0 48px rgba(123,47,255,0.22) !important; }
+.slot-editor-modal .export-modal-title { color: var(--violet); }
+.editor-header-grid {
+  display: grid;
+  grid-template-columns: 130px 1fr 110px;
+  gap: 10px;
+  align-items: end;
+}
+.editor-field { display: flex; flex-direction: column; gap: 4px; }
+.editor-field-label {
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.editor-input, .editor-select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  padding: 7px 9px;
+  outline: none;
+}
+.editor-input:focus, .editor-select:focus { border-color: var(--violet); }
+.editor-input.wide { width: 100%; }
+.editor-section-head {
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-top: 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.editor-mod-list { display: flex; flex-direction: column; gap: 6px; }
+.editor-mod-row { display: flex; gap: 6px; align-items: center; }
+.editor-mod-row .editor-input { flex: 1; }
+.editor-mod-remove, .editor-mod-add {
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  width: 28px; height: 28px;
+  cursor: pointer;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.editor-mod-remove:hover { color: var(--red); border-color: var(--red); }
+.editor-mod-add:hover { color: var(--violet); border-color: var(--violet); }
+.editor-empty-list {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 6px 2px;
+}
+.editor-rarity-rare    { color: var(--rare); }
+.editor-rarity-magic   { color: var(--magic); }
+.editor-rarity-unique  { color: var(--unique); }
+.editor-rarity-normal  { color: var(--text); }
+
+/* ── SKILL EDITOR (Phase 7B) ── */
+.share-build-btn.skills {
+  background: rgba(123,47,255,0.12);
+  border-color: rgba(123,47,255,0.4);
+  color: var(--violet);
+}
+.share-build-btn.skills:hover { background: rgba(123,47,255,0.22); box-shadow: 0 0 18px rgba(123,47,255,0.25); }
+.skill-editor-modal { border-color: var(--violet) !important; box-shadow: 0 0 48px rgba(123,47,255,0.22) !important; max-width: 820px !important; }
+.skill-editor-modal .export-modal-title { color: var(--violet); }
+.skill-groups-host { display: flex; flex-direction: column; gap: 12px; }
+.skill-group {
+  border: 1px solid var(--border-hi);
+  background: var(--panel-bg-light);
+  padding: 12px 14px;
+  position: relative;
+  transition: opacity 0.18s;
+}
+.skill-group.disabled { opacity: 0.45; }
+.skill-group.main-active {
+  border-color: var(--violet);
+  box-shadow: 0 0 14px rgba(123,47,255,0.18);
+}
+.skill-group-head {
+  display: flex; gap: 10px; align-items: center;
+  margin-bottom: 10px;
+  font-family: 'Orbitron', monospace;
+  font-size: 10px; letter-spacing: 2px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.skill-group-head .group-idx { color: var(--violet); font-weight: 700; }
+.skill-group-head .group-slot {
+  flex: 1;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; letter-spacing: 1px;
+  color: var(--text-muted);
+  text-transform: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 4px 7px;
+  outline: none;
+}
+.skill-group-head .group-slot:focus { border-color: var(--violet); }
+.skill-group-chips { display: flex; gap: 6px; }
+.skill-chip {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px; letter-spacing: 1.5px;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.12s;
+}
+.skill-chip:hover { color: var(--text); border-color: var(--text-dim); }
+.skill-chip.on.enabled { color: var(--green); border-color: rgba(0,230,118,0.4); background: rgba(0,230,118,0.08); }
+.skill-chip.off.enabled { color: var(--red); border-color: rgba(255,45,74,0.4); background: rgba(255,45,74,0.08); }
+.skill-chip.main { color: var(--violet); border-color: var(--violet); background: rgba(123,47,255,0.12); }
+.skill-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 64px 64px 28px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.skill-row .tag {
+  font-family: 'Orbitron', monospace;
+  font-size: 9px; letter-spacing: 1.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.skill-row .tag.main { color: var(--violet); font-weight: 700; }
+.skill-row .tag.sup  { color: var(--blue); }
+.skill-row input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+}
+.skill-row input:focus { border-color: var(--violet); }
+.skill-row .gem-cell { display: flex; gap: 4px; }
+.skill-row .gem-cell .gem-input { flex: 1; }
+.skill-row .gem-picker-btn {
+  width: 28px; height: 28px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.skill-row .gem-picker-btn:hover { color: var(--violet); border-color: var(--violet); }
+.skill-row .rm-btn {
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  width: 26px; height: 26px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.skill-row .rm-btn:hover { color: var(--red); border-color: var(--red); }
+.skill-group-actions {
+  display: flex; gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  align-items: center;
+}
+.skill-group-actions button {
+  font-family: 'Orbitron', monospace;
+  font-size: 9px; letter-spacing: 1.5px;
+  padding: 5px 9px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.12s;
+}
+.skill-group-actions button.add-sup:hover { color: var(--blue); border-color: var(--blue); }
+.skill-group-actions button.rm-group:hover { color: var(--red); border-color: var(--red); }
+.skill-add-group-row { margin-top: 4px; }
+.skill-add-group-btn {
+  font-family: 'Orbitron', monospace;
+  font-size: 10px; letter-spacing: 2px;
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px dashed var(--violet);
+  color: var(--violet);
+  cursor: pointer;
+  text-transform: uppercase;
+  width: 100%;
+}
+.skill-add-group-btn:hover { background: rgba(123,47,255,0.1); }
+
+/* ── GEM PICKER (Phase 7B) — separate overlay above skill editor ── */
+.gem-picker-overlay {
+  position: fixed; inset: 0;
+  background: rgba(2,1,8,0.78);
+  backdrop-filter: blur(6px);
+  z-index: 600;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+.gem-picker-overlay.show { display: flex; }
+.gem-picker-modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 70vh;
+  background: var(--panel-bg-strong);
+  border: 1px solid var(--violet);
+  box-shadow: 0 0 48px rgba(123,47,255,0.32);
+  display: flex;
+  flex-direction: column;
+}
+.gem-picker-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.gem-picker-head-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px; letter-spacing: 2.5px;
+  color: var(--violet);
+  text-transform: uppercase;
+}
+.gem-picker-search {
+  margin: 12px 14px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+}
+.gem-picker-search:focus-within { border-color: var(--violet); }
+.gem-picker-search .icon { color: var(--text-muted); font-size: 13px; }
+.gem-picker-search input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+}
+.gem-picker-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 6px 14px;
+}
+.gem-picker-row {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+  padding: 8px 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+.gem-picker-row:hover {
+  background: rgba(123,47,255,0.1);
+  border-left-color: var(--violet);
+}
+.gem-picker-row .meta {
+  display: block;
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+.gem-picker-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  padding: 24px 12px;
+  line-height: 1.5;
+}
+.gem-picker-use-custom {
+  margin: 0 14px 14px;
+  font-family: 'Orbitron', monospace;
+  font-size: 10px; letter-spacing: 2px;
+  padding: 8px 12px;
+  background: rgba(123,47,255,0.12);
+  border: 1px dashed var(--violet);
+  color: var(--violet);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.gem-picker-use-custom:hover { background: rgba(123,47,255,0.22); }
+
+/* ── PoB2 BRIDGE (v16) — Welcome-tab entry + wizard modal ── */
+.pob2-bridge-intro {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  padding: 8px 0 14px;
+}
+.pob2-bridge-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.connect-btn.pob2-launch-btn {
+  background: rgba(0,230,118,0.12);
+  border-color: rgba(0,230,118,0.45);
+  color: var(--green);
+}
+.connect-btn.pob2-launch-btn:hover { background: rgba(0,230,118,0.22); box-shadow: 0 0 18px rgba(0,230,118,0.28); }
+.pob2-status-pill {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.pob2-status-pill.ok    { color: var(--green);  border-color: rgba(0,230,118,0.4);  background: rgba(0,230,118,0.08); }
+.pob2-status-pill.warn  { color: var(--orange); border-color: rgba(255,140,32,0.4); background: rgba(255,140,32,0.08); }
+.pob2-status-pill.err   { color: var(--red);    border-color: rgba(255,45,74,0.4);  background: rgba(255,45,74,0.08); }
+
+.pob2-bridge-modal { border-color: var(--green) !important; box-shadow: 0 0 48px rgba(0,230,118,0.22) !important; max-width: 680px !important; }
+.pob2-bridge-modal .export-modal-title { color: var(--green); }
+.pob2-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  counter-reset: step;
+}
+.pob2-step {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--panel-bg-light);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text);
+}
+.pob2-step::before {
+  counter-increment: step;
+  content: counter(step);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  font-family: 'Orbitron', monospace;
+  font-size: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+}
+.pob2-step.done::before {
+  background: rgba(0,230,118,0.18);
+  border-color: var(--green);
+  color: var(--green);
+}
+.pob2-step.active {
+  border-color: var(--green);
+  background: rgba(0,230,118,0.06);
+}
+.pob2-step.active::before {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--ink, #000);
+}
+.pob2-step .step-action {
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.pob2-step .step-action:hover { color: var(--green); border-color: var(--green); }
+.pob2-step .step-action.primary {
+  background: rgba(0,230,118,0.15);
+  border-color: var(--green);
+  color: var(--green);
+}
+.pob2-result {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  padding: 10px 12px;
+  border-left: 3px solid;
+  background: var(--panel-bg-light);
+  white-space: pre-wrap;
+}
+.pob2-result.ok   { color: var(--green);  border-left-color: var(--green); }
+.pob2-result.warn { color: var(--orange); border-left-color: var(--orange); }
+.pob2-result.err  { color: var(--red);    border-left-color: var(--red); }
+.pob2-fallback-textarea {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  padding: 8px 10px;
+  min-height: 80px;
+  resize: vertical;
+  outline: none;
+}
+.pob2-fallback-textarea:focus { border-color: var(--green); }
+.pob2-config-help {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding: 10px 12px;
+  border-left: 3px solid var(--orange);
+  background: rgba(255,140,32,0.06);
+}
+.pob2-config-help code {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  background: var(--surface);
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  color: var(--orange);
+}
+
+/* ── TREE EDITOR (Phase 7C) ── */
+.share-build-btn.tree {
+  background: rgba(0,230,118,0.08);
+  border-color: rgba(0,230,118,0.4);
+  color: var(--green);
+}
+.share-build-btn.tree:hover { background: rgba(0,230,118,0.18); box-shadow: 0 0 18px rgba(0,230,118,0.25); }
+
+.tree-editor-modal { border-color: var(--green) !important; box-shadow: 0 0 48px rgba(0,230,118,0.22) !important; max-width: 720px !important; }
+.tree-editor-modal .export-modal-title { color: var(--green); }
+
+.tree-current-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+.tree-current-cell {
+  padding: 10px 12px;
+  background: var(--panel-bg-light);
+  border: 1px solid var(--border);
+}
+.tree-current-cell .label {
+  font-family: 'Orbitron', monospace;
+  font-size: 9px; letter-spacing: 2px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+.tree-current-cell .value {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+  color: var(--text);
+}
+.tree-current-cell .value.muted { color: var(--text-muted); font-style: italic; }
+.tree-url-display {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  color: var(--text);
+  word-break: break-all;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tree-url-display .url-link {
+  color: var(--green);
+  text-decoration: none;
+  flex: 1;
+}
+.tree-url-display .url-link:hover { text-decoration: underline; }
+.tree-url-display.empty .url-link { color: var(--text-muted); font-style: italic; cursor: default; }
+.tree-url-display .url-open {
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.tree-url-display .url-open:hover { color: var(--green); border-color: var(--green); }
+.tree-paste-textarea {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  padding: 10px 12px;
+  min-height: 64px;
+  resize: vertical;
+  outline: none;
+  word-break: break-all;
+}
+.tree-paste-textarea:focus { border-color: var(--green); }
+.tree-validation {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  padding: 8px 10px;
+  border-left: 3px solid;
+  background: var(--panel-bg-light);
+}
+.tree-validation.ok    { color: var(--green);  border-left-color: var(--green); }
+.tree-validation.warn  { color: var(--orange); border-left-color: var(--orange); }
+.tree-validation.empty { color: var(--text-muted); border-left-color: var(--border-hi); }
+.tree-version-input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+  width: 100%;
+}
+.tree-version-input:focus { border-color: var(--green); }
+
+/* Optimizer left-panel "Share Build" button row (Phase 7C: switched to
+   column layout so three buttons stack without text-crowding) */
 .share-build-row {
   padding: 10px 16px;
   border-top: 1px solid var(--border);
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
 }
 .share-build-btn {
   flex: 1;
@@ -1870,7 +2576,7 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
 
 <!-- HEADER -->
 <header>
-  <div class="logo">POE2 <em>FORGE</em><span class="ver">v12</span></div>
+  <div class="logo">POE2 <em>FORGE</em><span class="ver">v17</span></div>
 
   <div class="top-tabs">
     <button class="top-tab" data-tab="welcome" onclick="switchTab('welcome')">Welcome</button>
@@ -1891,11 +2597,11 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
 
     <div class="welcome-hero">
       <h1>POE2 <em>FORGE</em></h1>
-      <div class="tagline">Build Optimizer · Theorycraft Partner · Market Intelligence</div>
+      <div class="tagline">Build Optimizer · Theorycraft Partner · Official API Only</div>
       <p class="pitch">
-        A Path of Exile 2 build tool combining live trade-market optimization, AI-assisted
-        theorycrafting, and (eventually) a full PoB2 replacement — in one cohesive web app.
-        Currently in Phase 1 of the roadmap.
+        A Path of Exile 2 build workbench — PoB2 decoding, S-rank pattern scanning, gear and
+        skill editing, and an upgrade finder that hands you off to the official trade site.
+        Uses only GGG-documented resources: no session cookies, no undocumented endpoints.
       </p>
     </div>
 
@@ -1910,24 +2616,31 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
       </div>
     </div>
 
-    <!-- CONNECT CHARACTER (Phase 1) -->
+    <!-- CONNECT VIA POB2 (v16 — the supported PoE2 character-import path) -->
     <div class="welcome-section">
-      <div class="welcome-section-title">Connect Character</div>
-      <div class="connect-grid">
-        <div class="connect-field">
-          <div class="connect-label">League</div>
-          <select class="connect-select" id="connect-league" onchange="onLeagueChange()" disabled>
-            <option value="">— proxy offline —</option>
-          </select>
-        </div>
-        <div class="connect-field">
-          <div class="connect-label">Character</div>
-          <select class="connect-select" id="connect-character" onchange="onCharacterChange()" disabled>
-            <option value="">— pick a league first —</option>
-          </select>
-        </div>
-        <button class="connect-btn" id="connect-import-btn" onclick="importCharacter()" disabled>Import →</button>
-        <button class="connect-btn danger" id="connect-logout-btn" onclick="logoutCharacter()" style="display:none">Logout</button>
+      <div class="welcome-section-title">Connect via PoB2 (PoE2 characters)</div>
+      <div class="pob2-bridge-intro">
+        Forge can't fetch PoE2 characters directly (OAuth registration status unverified).
+        PoB2 has an approved OAuth client and can pull your PoE2 character data.
+        Click below to launch PoB2 with guided steps — Forge ingests the resulting build code automatically.
+      </div>
+      <div class="pob2-bridge-row">
+        <button class="connect-btn pob2-launch-btn" id="pob2-launch-btn" onclick="openPob2Bridge()">⛓ Connect via PoB2</button>
+        <span class="pob2-status-pill" id="pob2-status-pill">checking…</span>
+      </div>
+    </div>
+
+    <!-- DIRECT IMPORT (unavailable — OAuth registration status unverified) -->
+    <div class="welcome-section">
+      <div class="welcome-section-title">Direct Character Import (unavailable)</div>
+      <div class="pob2-bridge-intro">
+        OAuth registration status unverified; direct character import unavailable.
+        Forge makes no requests to pathofexile.com outside the documented developer API —
+        no session cookies, no scraping. Use <strong>Connect via PoB2</strong> above
+        (the PoB2 export/import workflow).
+      </div>
+      <div class="pob2-bridge-row">
+        <button class="connect-btn danger" id="connect-clear-btn" onclick="clearBuild()">Clear Loaded Build</button>
       </div>
       <div class="connect-status" id="connect-status"></div>
     </div>
@@ -1940,9 +2653,9 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
           <div class="info-card-icon">⬡</div>
           <div class="info-card-title">Optimizer</div>
           <div class="info-card-body">
-            Scan the live trade market for upgrades to your current gear. Priority sliders
-            weight upgrades by what matters most to you — resistance, life, DPS, defense, or
-            magic find. Requires an imported build.
+            Build prioritized upgrade searches per gear slot and open them on the official
+            trade site. Priority sliders weight what matters most to you — resistance, life,
+            DPS, defense, or magic find. Requires an imported build.
           </div>
           <button class="info-card-cta" onclick="switchTab('optimizer')">OPEN OPTIMIZER →</button>
         </div>
@@ -1964,36 +2677,34 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
 
       <div class="collapse open">
         <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
-          1 · Start the proxy
+          1 · Start the local server
         </div>
         <div class="collapse-body">
-          The Optimizer needs a local proxy running to talk to the GGG trade API.
+          The local server serves the app's files, builds official-trade-site search links, launches PoB2, and caches poe2scout price data. It never contacts pathofexile.com.
           Open a terminal in the folder containing <code>poe2forge-proxy.js</code> and run:
           <br><br>
           <code>node poe2forge-proxy.js</code>
           <br><br>
-          The proxy listens on <code>http://localhost:3001</code>. The status dot in the
+          The server listens on <code>http://localhost:3001</code>. The status dot in the
           top-right corner of the header turns <span style="color:var(--green)">green</span> when it's reachable.
         </div>
       </div>
 
       <div class="collapse">
         <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
-          2 · Configure your POESESSID
+          2 · Optional .env settings
         </div>
         <div class="collapse-body">
-          Forge uses your GGG account cookie (POESESSID) to make authenticated trade-API
-          requests. To get it:
+          The local server reads an optional <code>.env</code> file next to <code>poe2forge-proxy.js</code>:
           <br><br>
-          1. Log in to <code>pathofexile.com</code> in your browser<br>
-          2. Open DevTools (F12) → Application → Cookies → pathofexile.com<br>
-          3. Copy the value of the <code>POESESSID</code> cookie<br>
-          4. Paste it into your <code>.env</code> file next to the proxy:<br>
-          &nbsp;&nbsp;&nbsp;<code>POESESSID=your_cookie_value_here</code><br>
-          5. Restart the proxy
+          <code>POB2_PATH=C:\Program Files\Path of Building Community (PoE2)\Path of Building.exe</code><br>
+          <code>CONTACT_EMAIL=you@example.com</code><br>
+          <code>PORT=3001</code>
           <br><br>
-          The <code>.env</code> file should already be in your <code>.gitignore</code> — never commit it.
-          Full GGG OAuth flow lands in Phase 1 when GGG approves the app.
+          <strong>POB2_PATH</strong> enables one-click PoB2 launch for the character-import bridge.
+          <strong>CONTACT_EMAIL</strong> is sent in the User-Agent when fetching price context from the
+          public poe2scout API. No GGG credentials of any kind are used — <code>POESESSID</code> and
+          <code>POE_ACCOUNT</code> from v2.x are ignored and can be deleted.
         </div>
       </div>
 
@@ -2002,13 +2713,12 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
           3 · Import a character
         </div>
         <div class="collapse-body">
-          Use the <strong>Connect Character</strong> section above. The League dropdown auto-fills
-          from GGG when the proxy is reachable. Pick your character, click <code>Import →</code>,
-          and the Optimizer tab fills with your live gear.
+          Use the <strong>Connect via PoB2</strong> section above. PoB2 signs you in through GGG's
+          official OAuth page (approved client), you pick your character inside PoB2, copy the
+          generated code, and Forge ingests it from your clipboard.
           <br><br>
           The shared <code>currentBuild</code> object updates on import — every other tab that
-          reads from it (Optimizer paperdoll, Theorycraft scanners in later phases) sees the same
-          source of truth. Click <code>Logout</code> to clear it.
+          reads from it sees the same source of truth. <code>Clear Loaded Build</code> resets it.
         </div>
       </div>
 
@@ -2017,16 +2727,14 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
           4 · Troubleshooting
         </div>
         <div class="collapse-body">
-          <strong>Proxy offline:</strong> Check the terminal where you ran <code>node poe2forge-proxy.js</code>
+          <strong>Server offline:</strong> Check the terminal where you ran <code>node poe2forge-proxy.js</code>
           for errors. Most common: Node version too old (need 18+), or port 3001 already in use.
           <br><br>
-          <strong>League badge shows "PROXY OFFLINE":</strong> The proxy isn't reachable. Make sure
+          <strong>League badge shows "SERVER OFFLINE":</strong> The local server isn't reachable. Make sure
           it's running and that nothing else is using port 3001.
           <br><br>
-          <strong>POESESSID expired:</strong> GGG cookies expire periodically. Re-do step 2 to refresh.
-          <br><br>
           <strong>Nothing happens when I click a paperdoll slot:</strong> You need an imported build first.
-          Use Welcome → Import (Phase 1) or Theorycraft → PoB Decoder (Phase 2).
+          Use Welcome → Connect via PoB2, or Theorycraft → PoB2 Decoder.
         </div>
       </div>
     </div>
@@ -2036,12 +2744,13 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
       <div class="welcome-section-title">Roadmap Status</div>
       <div class="info-card">
         <div class="info-card-icon">◇</div>
-        <div class="info-card-title">Current Phase: 1 — Character Import &amp; Price Logging</div>
+        <div class="info-card-title">v17 — ToS-Compliance Release</div>
         <div class="info-card-body">
-          Phase 1 connects Forge to your live GGG account via POESESSID, imports your character
-          into the shared <code>currentBuild</code>, and begins logging trade-market data to
-          <code>trade_log.sqlite</code> for the Phase 10 market-intelligence work. Next: Phase 2
-          (PoB2 decoder) — paste a PoB code to populate <code>currentBuild</code> the same way.
+          v17 removed every pathofexile.com call outside GGG's documented developer API: no trade2
+          proxying, no session cookies, no character-window calls, no trade logging. Upgrade hunting
+          now deep-links to the official trade site; price context comes from the public poe2scout
+          API; character import rides PoB2's approved OAuth (Forge's own OAuth registration
+          status is unverified). Next: Phase 8 (in-browser calc engine).
         </div>
       </div>
     </div>
@@ -2327,11 +3036,105 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
   </div>
 </div>
 
+<!-- ═════════════════════════ PoB2 BRIDGE WIZARD MODAL (v16) ═════════════════════════ -->
+<div class="export-overlay" id="pob2-bridge-overlay" onclick="if(event.target===this)closePob2Bridge()">
+  <div class="export-modal pob2-bridge-modal">
+    <div class="export-modal-head">
+      <div class="export-modal-title">Connect via PoB2</div>
+      <button class="export-close" onclick="closePob2Bridge()">×</button>
+    </div>
+    <div class="export-body" id="pob2-bridge-body">
+      <!-- Filled by openPob2Bridge() -->
+    </div>
+    <div class="export-actions">
+      <button class="export-btn primary" id="pob2-paste-btn" onclick="pasteFromClipboard()">📋 Paste from Clipboard</button>
+      <div style="flex:1"></div>
+      <button class="export-btn ghost" onclick="closePob2Bridge()">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════════════════ TREE EDITOR MODAL (Phase 7C) ═════════════════════════ -->
+<div class="export-overlay" id="tree-editor-overlay" onclick="if(event.target===this)closeTreeEditor()">
+  <div class="export-modal tree-editor-modal">
+    <div class="export-modal-head">
+      <div class="export-modal-title">Edit Passive Tree</div>
+      <button class="export-close" onclick="closeTreeEditor()">×</button>
+    </div>
+    <div class="export-body" id="tree-editor-body">
+      <!-- Filled by openTreeEditor() -->
+    </div>
+    <div class="export-actions">
+      <button class="export-btn primary" onclick="saveTreeEdit()">✓ Save</button>
+      <button class="export-btn ghost" onclick="clearTreeEdit()">🗑 Clear tree</button>
+      <div style="flex:1"></div>
+      <button class="export-btn ghost" onclick="closeTreeEditor()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════════════════ SKILL EDITOR MODAL (Phase 7B) ═════════════════════════ -->
+<div class="export-overlay" id="skill-editor-overlay" onclick="if(event.target===this)closeSkillEditor()">
+  <div class="export-modal skill-editor-modal">
+    <div class="export-modal-head">
+      <div class="export-modal-title" id="skill-editor-title">Edit Skills</div>
+      <button class="export-close" onclick="closeSkillEditor()">×</button>
+    </div>
+    <div class="export-body">
+      <div class="export-blurb" id="skill-editor-blurb"></div>
+      <div class="skill-groups-host" id="skill-groups-host"></div>
+      <div class="skill-add-group-row">
+        <button class="skill-add-group-btn" onclick="addSkillGroup()">+ Add Skill Group</button>
+      </div>
+    </div>
+    <div class="export-actions">
+      <button class="export-btn primary" onclick="saveSkillEdit()">✓ Save</button>
+      <div style="flex:1"></div>
+      <button class="export-btn ghost" onclick="closeSkillEditor()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════════════════ GEM PICKER OVERLAY (Phase 7B) ═════════════════════════ -->
+<div class="gem-picker-overlay" id="gem-picker-overlay" onclick="if(event.target===this)closeGemPicker()">
+  <div class="gem-picker-modal">
+    <div class="gem-picker-head">
+      <div class="gem-picker-head-title">Pick Gem</div>
+      <button class="export-close" onclick="closeGemPicker()">×</button>
+    </div>
+    <div class="gem-picker-search">
+      <span class="icon">⌕</span>
+      <input id="gem-picker-search" placeholder="Search gem name..." oninput="filterGemPicker(this.value)" autocomplete="off">
+    </div>
+    <div class="gem-picker-list" id="gem-picker-list"></div>
+    <button class="gem-picker-use-custom" id="gem-picker-use-custom" onclick="useCustomGem()" style="display:none">Use Custom &mdash; "<span id="gem-picker-custom-name"></span>"</button>
+  </div>
+</div>
+
+<!-- ═════════════════════════ SLOT EDITOR MODAL (Phase 7A) ═════════════════════════ -->
+<div class="export-overlay" id="slot-editor-overlay" onclick="if(event.target===this)closeSlotEditor()">
+  <div class="export-modal slot-editor-modal">
+    <div class="export-modal-head">
+      <div class="export-modal-title" id="slot-editor-title">Edit Slot</div>
+      <button class="export-close" onclick="closeSlotEditor()">×</button>
+    </div>
+    <div class="export-body" id="slot-editor-body">
+      <!-- Filled by openSlotEditor() -->
+    </div>
+    <div class="export-actions">
+      <button class="export-btn primary" onclick="saveSlotEdit()">✓ Save</button>
+      <button class="export-btn ghost" onclick="clearSlotEdit()">🗑 Clear slot</button>
+      <div style="flex:1"></div>
+      <button class="export-btn ghost" onclick="closeSlotEditor()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 // ═════════════════════════════════════════════════════════════════════════
-// POE2 FORGE v12 — PHASE 6 (Phases 1–5 preserved)
+// POE2 FORGE v16 — PoB2 BRIDGE (Phases 1–7C preserved)
 // ═════════════════════════════════════════════════════════════════════════
 
 // ── CONFIG ──────────────────────────────────────────────────────────────
@@ -2385,9 +3188,6 @@ function renderBuildBadge() {
     badge.textContent = 'NO BUILD LOADED';
     badge.className = 'pill pill-blue';
   }
-  // Reflect login state in Connect Character buttons
-  const logoutBtn = document.getElementById('connect-logout-btn');
-  if (logoutBtn) logoutBtn.style.display = currentBuild ? '' : 'none';
 }
 
 // ── OPTIMIZER UI STATE (Phase 1) ────────────────────────────────────────
@@ -2424,128 +3224,18 @@ function setConnectStatus(msg, type = '') {
   el.className = 'connect-status' + (type ? ' ' + type : '');
 }
 
-async function populateLeagueDropdown() {
-  const sel = document.getElementById('connect-league');
-  if (!sel) return;
-  try {
-    const data = await fetch(PROXY + '/leagues').then(r => r.json());
-    leaguesCache = (data.result || []).filter(l => l.realm === 'poe2');
-    if (!leaguesCache.length) {
-      sel.innerHTML = '<option value="">— no PoE2 leagues —</option>';
-      sel.disabled = true;
-      return;
-    }
-    // Default selection: first non-Standard/non-HC league (active temp league)
-    const preferred = leaguesCache.find(l =>
-      !/^standard$/i.test(l.id) && !/^hardcore$/i.test(l.id) && !/^hc\s/i.test(l.id)
-    ) || leaguesCache[0];
-    sel.innerHTML = leaguesCache
-      .map(l => `<option value="${l.id}" ${l.id === preferred.id ? 'selected' : ''}>${l.text}</option>`)
-      .join('');
-    sel.disabled = false;
-    currentLeague = preferred.id;
-    onLeagueChange();
-  } catch(e) {
-    sel.innerHTML = '<option value="">— proxy offline —</option>';
-    sel.disabled = true;
-  }
-}
-
-async function onLeagueChange() {
-  const leagueSel = document.getElementById('connect-league');
-  const charSel = document.getElementById('connect-character');
-  const importBtn = document.getElementById('connect-import-btn');
-  currentLeague = leagueSel.value;
-  charSel.disabled = true;
-  importBtn.disabled = true;
-  charSel.innerHTML = '<option value="">loading…</option>';
-  setConnectStatus('Fetching characters…', 'info');
-
-  try {
-    const data = await fetch(PROXY + '/characters').then(r => r.json());
-    if (data?.error) {
-      const msg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
-      charSel.innerHTML = '<option value="">— ' + msg + ' —</option>';
-      setConnectStatus('GGG rejected the request: ' + msg + ' · check POESESSID + profile privacy in .env / pathofexile.com settings', 'err');
-      return;
-    }
-    charactersCache = Array.isArray(data) ? data : (data.characters || data.result || []);
-    if (!charactersCache.length) {
-      charSel.innerHTML = '<option value="">— no characters found —</option>';
-      setConnectStatus('No characters on this account', 'info');
-      return;
-    }
-    // Show every character. League sits in the label so user picks the right
-    // realm. Auto-prefer characters matching the selected league.
-    const matching = charactersCache.filter(c => c.league === currentLeague);
-    const others = charactersCache.filter(c => c.league !== currentLeague);
-    const sorted = [...matching, ...others];
-    charSel.innerHTML =
-      '<option value="">— select character —</option>' +
-      sorted.map(c =>
-        `<option value="${c.name}" data-league="${escAttr(c.league || '')}">${escHtml(c.name)} · L${c.level || '?'} · ${escHtml(c.class || c.classId || '?')} · ${escHtml(c.league || 'no league')}</option>`
-      ).join('');
-    charSel.disabled = false;
-    if (matching.length) {
-      setConnectStatus(`${matching.length} character(s) in ${currentLeague}, ${others.length} in other leagues`, 'ok');
-    } else {
-      setConnectStatus(`${charactersCache.length} characters total — none in ${currentLeague}. NOTE: the legacy character API returns PoE1 chars; PoE2 chars need GGG OAuth approval to access.`, 'info');
-    }
-  } catch(e) {
-    charSel.innerHTML = '<option value="">— fetch failed —</option>';
-    setConnectStatus('Network error: ' + e.message, 'err');
-  }
-}
-
-function onCharacterChange() {
-  const sel = document.getElementById('connect-character');
-  const btn = document.getElementById('connect-import-btn');
-  btn.disabled = !sel.value;
-}
-
-async function importCharacter() {
-  const sel = document.getElementById('connect-character');
-  const btn = document.getElementById('connect-import-btn');
-  const name = sel.value;
-  if (!name) return;
-  btn.disabled = true;
-  btn.textContent = 'Importing…';
-  setConnectStatus('Fetching items + passives for ' + name + '…', 'info');
-
-  try {
-    const data = await fetch(PROXY + '/character/' + encodeURIComponent(name)).then(r => r.json());
-    if (data?.error) {
-      const msg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
-      setConnectStatus('Import failed: ' + msg, 'err');
-      return;
-    }
-    // Use the league of the character we picked (from the cached list) — that
-    // becomes the build's league for downstream trade searches.
-    const cached = charactersCache.find(c => c.name === name);
-    const importedLeague = cached?.league || currentLeague;
-    const build = mapGGGCharacterToBuild(data, importedLeague);
-    currentLeague = importedLeague; // trade searches go against this league
-    setCurrentBuild(build);
-    setConnectStatus(`Imported ${build.character.name} · L${build.character.level} · ${build.character.ascendancy || build.character.class} · ${importedLeague}`, 'ok');
-    toast('Character imported — opening Optimizer', 'ok');
-    setTimeout(() => switchTab('optimizer'), 600);
-  } catch(e) {
-    setConnectStatus('Network error: ' + e.message, 'err');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Import →';
-  }
-}
-
-function logoutCharacter() {
+// v17: The PoE1 character-window import flow was removed for ToS compliance.
+// Character import now routes exclusively through the PoB2 bridge (GGG-
+// approved OAuth); Forge's own OAuth registration status is unverified. The
+// GGG→currentBuild mapper below is retained for a possible future direct import.
+function clearBuild() {
   setCurrentBuild(null);
-  allResults = [];
-  filteredResults = [];
-  selectedItem = null;
-  activeSlot = null;
-  setConnectStatus('Logged out — currentBuild cleared', 'info');
+  setConnectStatus('Build cleared', 'info');
   runSetupCheck();
 }
+
+// (onLeagueChange / onCharacterChange / importCharacter / logoutCharacter
+// deleted in v17 along with the character-window integration they served.)
 
 // ── GGG → currentBuild MAPPER ───────────────────────────────────────────
 // Maps GGG's /character-window/get-items + get-passive-skills payload into
@@ -2714,11 +3404,10 @@ function switchSubtab(sub) {
 async function runSetupCheck() {
   const checklist = document.getElementById('setup-checklist');
   const items = [
-    { id: 'proxy', title: 'Local proxy reachable', state: 'wait', detail: 'Checking <code>http://localhost:3001/health</code>…' },
-    { id: 'posessid', title: 'POESESSID configured', state: 'wait', detail: 'Pending proxy check…' },
-    { id: 'league', title: 'Current league detected', state: 'wait', detail: 'Pending proxy check…' },
+    { id: 'proxy', title: 'Local app server reachable', state: 'wait', detail: 'Checking <code>http://localhost:3001/health</code>…' },
+    { id: 'pob2', title: 'PoB2 bridge configured', state: 'wait', detail: 'Pending server check…' },
     { id: 'build', title: 'Build loaded', state: 'wait', detail: 'Pending…' },
-    { id: 'oauth', title: 'GGG OAuth connected', state: 'warn', detail: 'Pending GGG approval. POESESSID path is used in the meantime — Phase 1 of the roadmap.' }
+    { id: 'oauth', title: 'GGG OAuth (direct import)', state: 'warn', detail: 'OAuth registration status unverified; direct character import unavailable. Use the PoB2 export/import workflow (Connect via PoB2). No cookies, no undocumented endpoints.' }
   ];
 
   function render() {
@@ -2726,8 +3415,8 @@ async function runSetupCheck() {
       const icons = { ok:'✓', fail:'✗', wait:'…', warn:'!' };
       const actions = {
         proxy: it.state === 'fail' ? '<button class="check-action" onclick="document.querySelectorAll(\'.collapse\')[0].classList.add(\'open\');document.querySelectorAll(\'.collapse\')[0].scrollIntoView({behavior:\'smooth\'})">SHOW INSTRUCTIONS</button>' : '',
-        posessid: it.state === 'fail' ? '<button class="check-action" onclick="document.querySelectorAll(\'.collapse\')[1].classList.add(\'open\');document.querySelectorAll(\'.collapse\')[1].scrollIntoView({behavior:\'smooth\'})">SHOW INSTRUCTIONS</button>' : '',
-        build: it.state !== 'ok' ? '<button class="check-action primary" onclick="document.getElementById(\'connect-character\').scrollIntoView({behavior:\'smooth\',block:\'center\'})">IMPORT BELOW</button>' : '<button class="check-action" onclick="switchTab(\'optimizer\')">OPEN</button>',
+        pob2: '',
+        build: it.state !== 'ok' ? '<button class="check-action primary" onclick="openPob2Bridge()">CONNECT VIA POB2</button>' : '<button class="check-action" onclick="switchTab(\'optimizer\')">OPEN</button>',
         oauth: ''
       };
       return `
@@ -2745,63 +3434,41 @@ async function runSetupCheck() {
 
   render();
 
-  // Check proxy + POESESSID + league
+  // Check the local app server (makes zero pathofexile.com requests)
   try {
     const health = await fetch(PROXY + '/health', { signal: AbortSignal.timeout(3000) }).then(r => r.json());
     items[0].state = 'ok';
-    items[0].detail = `Connected · rate limit: ${health.rateLimitRemaining || '?'} req/min`;
+    items[0].detail = `Connected · ${health.proxy || 'local server'} · zero pathofexile.com traffic`;
     document.getElementById('proxy-dot').className = 'dot dot-on';
 
-    // POESESSID — proxy may or may not report this. If not, mark warn.
-    if (health.posessidValid === true) {
+    if (health.pob2Configured) {
       items[1].state = 'ok';
-      items[1].detail = 'Valid GGG session cookie detected by proxy.';
-    } else if (health.posessidValid === false) {
-      items[1].state = 'fail';
-      items[1].detail = 'Proxy reports POESESSID missing or invalid. See setup step 2 below.';
+      items[1].detail = 'POB2_PATH configured — one-click launch for the PoB2 import bridge.';
     } else {
       items[1].state = 'warn';
-      items[1].detail = 'Proxy does not yet report POESESSID validity. Will be wired up in Phase 1.';
+      items[1].detail = 'POB2_PATH not set in <code>.env</code> — the bridge still works, you just open PoB2 yourself.';
     }
 
-    // League detection — also drives the Connect Character dropdown
-    try {
-      await populateLeagueDropdown();
-      if (leaguesCache.length) {
-        const current = leaguesCache.find(l =>
-          !/^standard$/i.test(l.id) && !/^hardcore$/i.test(l.id) && !/^hc\s/i.test(l.id)
-        ) || leaguesCache[0];
-        items[2].state = 'ok';
-        items[2].detail = `Current league: <code>${current.text}</code> · ${leaguesCache.length} PoE2 league(s) available`;
-        document.getElementById('league-badge').textContent = current.text.toUpperCase();
-        document.getElementById('league-badge').className = 'pill pill-gold';
-      } else {
-        items[2].state = 'fail';
-        items[2].detail = 'Proxy responded but no PoE2 leagues returned.';
-      }
-    } catch(e) {
-      items[2].state = 'fail';
-      items[2].detail = 'Could not fetch league list from proxy.';
-    }
+    const lg = currentBuild?.character?.league;
+    document.getElementById('league-badge').textContent = lg ? lg.toUpperCase() : 'OFFICIAL API ONLY';
+    document.getElementById('league-badge').className = 'pill pill-gold';
   } catch(e) {
     items[0].state = 'fail';
-    items[0].detail = 'Proxy not reachable. Start it with <code>node poe2forge-proxy.js</code>.';
+    items[0].detail = 'Local server not reachable. Start it with <code>node poe2forge-proxy.js</code>. Theorycraft tools work without it.';
     items[1].state = 'wait';
-    items[1].detail = 'Cannot check — proxy offline.';
-    items[2].state = 'wait';
-    items[2].detail = 'Cannot check — proxy offline.';
+    items[1].detail = 'Cannot check — server offline.';
     document.getElementById('proxy-dot').className = 'dot dot-off';
-    document.getElementById('league-badge').textContent = 'PROXY OFFLINE';
+    document.getElementById('league-badge').textContent = 'SERVER OFFLINE';
     document.getElementById('league-badge').className = 'pill pill-red';
   }
 
   // Build status
   if (currentBuild) {
-    items[3].state = 'ok';
-    items[3].detail = `Loaded: <code>${currentBuild.character?.name || 'Unnamed'}</code> · ${currentBuild.character?.class || '?'} · L${currentBuild.character?.level || '?'} · source: ${currentBuild.source || '?'}`;
+    items[2].state = 'ok';
+    items[2].detail = `Loaded: <code>${currentBuild.character?.name || 'Unnamed'}</code> · ${currentBuild.character?.class || '?'} · L${currentBuild.character?.level || '?'} · source: ${currentBuild.source || '?'}`;
   } else {
-    items[3].state = 'fail';
-    items[3].detail = 'No build loaded. Use the <strong>Connect Character</strong> section below to import from your GGG account.';
+    items[2].state = 'fail';
+    items[2].detail = 'No build loaded. Use <strong>Connect via PoB2</strong> above, or paste a PoB2 code in Theorycraft.';
   }
 
   render();
@@ -2815,7 +3482,7 @@ function renderOptimizerLeftPanel() {
       <div class="empty-left-panel">
         <div class="icon">⬡</div>
         <div style="color:var(--text);font-family:'Orbitron',monospace;font-size:11px;letter-spacing:2px;margin-bottom:10px;text-transform:uppercase">No Build Loaded</div>
-        Import a character (Phase 1) or paste a PoB2 code (Phase 2) to populate this panel with your stats, resistances, and upgrade priority controls.
+        Connect via PoB2 (Welcome tab) or paste a PoB2 code (Theorycraft) to populate this panel with your stats, resistances, and search priority controls.
       </div>
     `;
     return;
@@ -2883,6 +3550,8 @@ function renderOptimizerLeftPanel() {
       </div>
     </div>
     <div class="share-build-row">
+      <button class="share-build-btn skills" onclick="openSkillEditor()">⚙ Edit Skills</button>
+      <button class="share-build-btn tree" onclick="openTreeEditor()">✦ Edit Passive Tree</button>
       <button class="share-build-btn" onclick="openExportModal()">↗ Export Build (PoB2)</button>
     </div>
   `;
@@ -2927,8 +3596,8 @@ function renderOptimizerCenterPanel() {
         <div class="empty-build-icon">⬡</div>
         <div class="empty-build-title">No Build Loaded</div>
         <div class="empty-build-detail">
-          The Optimizer needs a character build to analyze. Import one from your GGG account
-          (Phase 1), or paste a Path of Building 2 export code (Phase 2).
+          The Optimizer needs a character build to analyze. Connect via PoB2 on the Welcome tab,
+          or paste a Path of Building 2 export code in Theorycraft.
         </div>
         <button class="empty-build-cta" onclick="switchTab('welcome')">GO TO WELCOME →</button>
       </div>
@@ -2958,12 +3627,14 @@ const SLOT_LAYOUT = [
 
 function renderPaperdollView(container) {
   const gear = currentBuild.gear || {};
+  // Phase 7A: in edit mode every tile shows the violet "editable" treatment.
+  const editCls = editMode ? ' editable' : '';
   const tiles = SLOT_LAYOUT.map(({ slot, label, style, extra }) => {
     const item = gear[slot];
     const count = allResults.filter(i => i._slot === slot).length;
     const hasResults = count > 0;
     if (!item) {
-      return `<div class="slot-tile empty${hasResults ? ' has-results' : ''}" data-slot="${slot}" onclick="onSlotClick('${slot}')" style="${style}">
+      return `<div class="slot-tile empty${editCls}${hasResults ? ' has-results' : ''}" data-slot="${slot}" onclick="onSlotClick('${slot}')" style="${style}">
         <div class="slot-label">${label}</div>
         <div class="slot-icon"></div>
         <div class="slot-item">empty</div>
@@ -2974,7 +3645,7 @@ function renderPaperdollView(container) {
     // Icon resolution: GGG icon → unique art (by name) → base art (by typeLine)
     const iconUrl = lookupItemIcon(item);
     const icon = iconUrl ? `<img src="${escAttr(iconUrl)}" alt="${escAttr(item.name||item.typeLine)}" loading="lazy" onerror="this.style.display='none'">` : '';
-    return `<div class="slot-tile filled ${rarityCls}${extra ? ' ' + extra : ''}${hasResults ? ' has-results' : ''}" data-slot="${slot}" onclick="onSlotClick('${slot}')" style="${style}">
+    return `<div class="slot-tile filled ${rarityCls}${editCls}${extra ? ' ' + extra : ''}${hasResults ? ' has-results' : ''}" data-slot="${slot}" onclick="onSlotClick('${slot}')" style="${style}">
       <div class="slot-label">${label}</div>
       <div class="slot-icon">${icon}</div>
       <div class="slot-item">${escHtml(item.name || item.typeLine || '')}</div>
@@ -3015,11 +3686,17 @@ function renderPaperdollView(container) {
   const charm2 = charms[1];
   const charm3 = charms[2];
 
+  const stalePill = currentBuild.editedSinceImport
+    ? `<span class="stats-stale-pill" title="Stats below were computed by PoB2 against the imported build. Phase 8 calc engine will recompute these.">STATS STALE</span>`
+    : '';
   container.innerHTML = `
     <div class="center-content" id="paperdoll-view">
       <div class="center-head">
         <span>Equipment</span>
-        <span class="hint">CLICK A SLOT TO SCAN UPGRADES</span>
+        <div class="center-head-actions">
+          <span class="hint">${editMode ? 'CLICK A SLOT TO EDIT' : 'CLICK A SLOT — SEARCH OPENS ON THE OFFICIAL TRADE SITE'}</span>
+          <button class="edit-mode-toggle ${editMode ? 'active' : ''}" onclick="toggleEditMode()" title="Toggle edit mode (Phase 7A)">${editMode ? '◉ EDIT MODE' : '◯ EDIT MODE'}</button>
+        </div>
       </div>
       <div class="paperdoll" id="paperdoll-grid">${tiles}</div>
       <div class="consumables">
@@ -3030,8 +3707,8 @@ function renderPaperdollView(container) {
         ${consumableTile(manaFlask, 'MANA',  'flask')}
       </div>
       <div class="scan-all-bar" style="margin-top:auto">
-        <button class="scan-all-btn" id="scan-btn" onclick="scanAll()">⬡ SCAN ALL UPGRADES</button>
-        <span class="scan-all-status" id="scan-status">${Object.values(gear).filter(Boolean).length}/10 slots · ${flasks.length} flasks · ${charms.length} charms</span>
+        <button class="scan-all-btn" id="scan-btn" onclick="openTrade()">↗ OPEN OFFICIAL TRADE SITE</button>
+        <span class="scan-all-status" id="scan-status">${Object.values(gear).filter(Boolean).length}/10 slots · ${flasks.length} flasks · ${charms.length} charms${stalePill}</span>
       </div>
     </div>
   `;
@@ -3331,14 +4008,9 @@ function openTrade() {
 
 // ── SLOT CLICK + SCAN ───────────────────────────────────────────────────
 function onSlotClick(slot) {
-  if (activeSlot === slot) { closeResults(); return; }
-  const hasResults = allResults.some(i => i._slot === slot);
-  if (hasResults) {
-    openResults(slot);
-  } else {
-    setSlotState(slot, 'scanning');
-    searchSlot(slot).then(() => openResults(slot));
-  }
+  // Phase 7A: in edit mode, click opens the slot editor instead of searching.
+  if (editMode) { openSlotEditor(slot); return; }
+  openTradeSearch(slot);
 }
 
 function setSlotState(slot, state) {
@@ -3360,58 +4032,45 @@ function closeResults() {
   renderItemDetailEmpty();
 }
 
-async function searchSlot(slot) {
+// v17: builds a prioritized search for the slot and opens it on the OFFICIAL
+// trade site. The local server only constructs the URL — neither it nor this
+// page calls any pathofexile.com API. If the server is offline (e.g. GitHub
+// Pages standalone), fall back to the trade site's league page without a
+// prefilled query.
+async function openTradeSearch(slot) {
   // ring_l + ring_r both query for "ring" upstream
   const proxySlot = ({ ring_l: 'ring', ring_r: 'ring' })[slot] || slot;
   const budgetEl = document.getElementById('inp-budget');
   const budget = budgetEl ? (parseFloat(budgetEl.value) || null) : null;
+  const league = currentLeague || currentBuild?.character?.league || 'Runes of Aldur';
+  setSlotState(slot, 'scanning');
   try {
-    const data = await fetch(PROXY + '/smart-search', {
+    const data = await fetch(PROXY + '/trade-link', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        league: currentLeague || currentBuild?.character?.league,
+        league,
         slot: proxySlot,
-        stats: { ...(currentBuild?.stats || {}), level: currentBuild?.character?.level },
+        stats: { level: currentBuild?.character?.level },
         budget,
-        rarity: 'rare',
-        poolSize: 20,
       })
     }).then(r => r.json());
-
-    if (data?.error) {
-      setSlotState(slot, null);
-      toast('Search failed: ' + (typeof data.error === 'string' ? data.error : data.error.message || 'unknown'), 'err');
-      return;
+    setSlotState(slot, null);
+    if (data?.url) {
+      window.open(data.url, '_blank', 'noopener');
+      toast(`${slot.replace('_', ' ')}: search opened on the official trade site`, 'ok');
+    } else {
+      toast('Could not build trade link: ' + (data?.error || 'unknown'), 'err');
     }
-    const tagged = (data.results || []).map(i => ({ ...i, _slot: slot }));
-    allResults = allResults.filter(i => i._slot !== slot).concat(tagged);
-    setSlotState(slot, 'has-results');
-    toast(`${slot.replace('_', ' ')}: ${tagged.length} items loaded`, 'ok');
   } catch (e) {
     setSlotState(slot, null);
-    toast('Search failed: ' + e.message, 'err');
+    window.open('https://www.pathofexile.com/trade2/search/poe2/' + encodeURIComponent(league), '_blank', 'noopener');
+    toast('Local server offline — opened the official trade site without a prefilled search', 'info');
   }
 }
 
-async function scanAll() {
-  const btn = document.getElementById('scan-btn');
-  if (!btn) return;
-  btn.disabled = true;
-  btn.textContent = 'SCANNING...';
-  allResults = [];
-
-  const slots = ['ring_l', 'ring_r', 'amulet', 'helmet', 'body', 'gloves', 'boots', 'belt', 'weapon', 'offhand'];
-  for (const slot of slots) {
-    setSlotState(slot, 'scanning');
-    await searchSlot(slot);
-    await new Promise(r => setTimeout(r, 900)); // be polite to GGG rate limits
-  }
-
-  btn.disabled = false;
-  btn.textContent = '⬡ SCAN ALL UPGRADES';
-  toast('Full scan complete — ' + allResults.length + ' items scored', 'ok');
-}
+// v17: scanAll (bulk trade2 fetching) removed — per-slot searches now open on
+// the official trade site; the header button links there directly.
 
 // ── KEYBOARD ────────────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
@@ -3572,6 +4231,7 @@ function parsePobXml(xmlText) {
       slot: skillEl.getAttribute('slot') || '',
       mainActive: skillEl.getAttribute('mainActiveSkill') === '1' ||
                   +skillEl.getAttribute('mainActiveSkill') > 0,
+      enabled: skillEl.getAttribute('enabled') !== 'false',   // Phase 7B
       gems,
     });
   });
@@ -3724,6 +4384,7 @@ function mapPobToBuild(parsed) {
       gemLevel: main?.level ?? null,
       quality: main?.quality ?? null,
       mainActive: s.mainActive,
+      enabled: s.enabled !== false,   // Phase 7B
     };
   });
 
@@ -3926,16 +4587,18 @@ function synthesizePobXml(build) {
   }
 
   // Skills: one SkillSet, each Skill is a socket group with its gems.
+  // Phase 7B: emit per-group enabled state (was hardcoded "true" in v12/v13).
   const skillRows = skills.map((sg, idx) => {
+    const groupEnabled = sg.enabled !== false ? 'true' : 'false';
     const gems = [];
     if (sg.mainSkill) {
-      gems.push(`        <Gem nameSpec="${xmlEsc(sg.mainSkill)}" enabled="true" level="${sg.gemLevel || 20}" quality="${sg.quality || 0}" skillId=""/>`);
+      gems.push(`        <Gem nameSpec="${xmlEsc(sg.mainSkill)}" enabled="${groupEnabled}" level="${sg.gemLevel || 20}" quality="${sg.quality || 0}" skillId=""/>`);
     }
     for (const sup of (sg.supports || [])) {
-      gems.push(`        <Gem nameSpec="${xmlEsc(sup)}" enabled="true" level="${sg.gemLevel || 20}" quality="0" skillId=""/>`);
+      gems.push(`        <Gem nameSpec="${xmlEsc(sup)}" enabled="${groupEnabled}" level="${sg.gemLevel || 20}" quality="0" skillId=""/>`);
     }
     const mainActive = sg.mainActive ? '1' : '0';
-    return `      <Skill mainActiveSkill="${mainActive}" enabled="true" slot="${xmlEsc(sg.slot || '')}" label="">
+    return `      <Skill mainActiveSkill="${mainActive}" enabled="${groupEnabled}" slot="${xmlEsc(sg.slot || '')}" label="">
 ${gems.join('\n')}
       </Skill>`;
   });
@@ -3955,7 +4618,7 @@ ${statRows.join('\n')}
       <Overrides/>
     </Spec>
   </Tree>
-  <Notes>Exported from POE2 Forge v12 on ${new Date().toISOString()}</Notes>
+  <Notes>Exported from POE2 Forge v17 on ${new Date().toISOString()}</Notes>
   <NotesHTML/>
   <TreeView searchStr="" zoomLevel="3" showHeatMap="false"/>
   <Items activeItemSet="1" useSecondWeaponSet="false">
@@ -4110,6 +4773,694 @@ function serializeItem(id, item) {
 ${xmlEsc(body)}
     </Item>`;
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+// SLOT EDITOR (Phase 7A) — Gear mod editor
+// ═════════════════════════════════════════════════════════════════════════
+// Edit any of the 10 main-gear slots in place. On save we mutate
+// currentBuild.gear[slot], set editedSinceImport (stats stale until the
+// Phase 8 calc engine recomputes), and null out lastDecodedCode so Phase 6
+// export falls through from roundtrip to synthesize mode — the original
+// PoB bytes no longer describe this build.
+
+let editMode = false;
+let editingSlot = null;
+
+const SLOT_DISPLAY_NAMES = {
+  weapon: 'Weapon 1', offhand: 'Weapon 2 / Offhand',
+  helmet: 'Helmet',   body:    'Body Armour',
+  gloves: 'Gloves',   boots:   'Boots',
+  amulet: 'Amulet',   belt:    'Belt',
+  ring_l: 'Ring (Left)', ring_r: 'Ring (Right)',
+};
+
+function toggleEditMode() {
+  if (!currentBuild) { toast('Load a build before editing', 'err'); return; }
+  editMode = !editMode;
+  renderOptimizerCenterPanel();
+}
+
+function openSlotEditor(slot) {
+  if (!currentBuild) return;
+  if (!currentBuild.gear) currentBuild.gear = {};
+  editingSlot = slot;
+  const item = currentBuild.gear[slot] || {
+    rarity: 'rare', name: '', typeLine: '', ilvl: 1,
+    implicits: [], mods: [], sockets: [],
+  };
+  // mods on the schema is implicits-concatenated-with-explicits — see Phase 2
+  // mapPobToBuild. Tease them apart for the two editor sections.
+  const implicits = item.implicits || [];
+  const explicits = (item.mods || []).filter(m => !implicits.includes(m));
+
+  document.getElementById('slot-editor-title').textContent = `Edit · ${SLOT_DISPLAY_NAMES[slot] || slot}`;
+  const body = document.getElementById('slot-editor-body');
+  body.innerHTML = `
+    <div class="editor-header-grid">
+      <div class="editor-field">
+        <span class="editor-field-label">Rarity</span>
+        <select class="editor-select editor-rarity-${item.rarity || 'rare'}" id="edit-rarity">
+          <option value="normal" ${item.rarity==='normal'?'selected':''}>Normal</option>
+          <option value="magic"  ${item.rarity==='magic'?'selected':''}>Magic</option>
+          <option value="rare"   ${item.rarity==='rare'?'selected':''}>Rare</option>
+          <option value="unique" ${item.rarity==='unique'?'selected':''}>Unique</option>
+        </select>
+      </div>
+      <div class="editor-field">
+        <span class="editor-field-label">Item Name</span>
+        <input class="editor-input wide" id="edit-name" value="${escAttr(item.name || '')}" placeholder="(optional for rares)">
+      </div>
+      <div class="editor-field">
+        <span class="editor-field-label">Item Level</span>
+        <input class="editor-input" id="edit-ilvl" type="number" min="1" max="100" value="${item.ilvl ?? 1}">
+      </div>
+    </div>
+    <div class="editor-field">
+      <span class="editor-field-label">Base Type</span>
+      <input class="editor-input wide" id="edit-typeLine" value="${escAttr(item.typeLine || '')}" placeholder="e.g. Stellar Amulet">
+    </div>
+
+    <div class="editor-section-head">
+      <span>Implicit Mods</span>
+      <button class="editor-mod-add" onclick="addModRow('implicits')" title="Add implicit">+</button>
+    </div>
+    <div class="editor-mod-list" id="edit-implicits-list">
+      ${implicits.length ? implicits.map(modRowHtml).join('') : `<div class="editor-empty-list">No implicit mods.</div>`}
+    </div>
+
+    <div class="editor-section-head">
+      <span>Explicit Mods</span>
+      <button class="editor-mod-add" onclick="addModRow('explicits')" title="Add explicit">+</button>
+    </div>
+    <div class="editor-mod-list" id="edit-explicits-list">
+      ${explicits.length ? explicits.map(modRowHtml).join('') : `<div class="editor-empty-list">No explicit mods.</div>`}
+    </div>
+  `;
+  document.getElementById('slot-editor-overlay').classList.add('show');
+  // Live-recolor the rarity select to match its current value
+  document.getElementById('edit-rarity').addEventListener('change', e => {
+    e.target.className = 'editor-select editor-rarity-' + e.target.value;
+  });
+}
+
+function modRowHtml(text) {
+  return `<div class="editor-mod-row">
+    <input class="editor-input" value="${escAttr(text)}">
+    <button class="editor-mod-remove" onclick="this.parentElement.remove()" title="Remove">×</button>
+  </div>`;
+}
+
+function addModRow(kind) {
+  const list = document.getElementById(`edit-${kind}-list`);
+  const empty = list.querySelector('.editor-empty-list');
+  if (empty) empty.remove();
+  const wrap = document.createElement('div');
+  wrap.innerHTML = modRowHtml('');
+  const row = wrap.firstElementChild;
+  list.appendChild(row);
+  row.querySelector('input').focus();
+}
+
+function collectMods(listId) {
+  const inputs = document.querySelectorAll(`#${listId} .editor-mod-row input`);
+  return Array.from(inputs).map(i => i.value.trim()).filter(Boolean);
+}
+
+function saveSlotEdit() {
+  if (!editingSlot || !currentBuild) return;
+  const rarity = document.getElementById('edit-rarity').value;
+  const name = document.getElementById('edit-name').value.trim();
+  const typeLine = document.getElementById('edit-typeLine').value.trim();
+  const ilvl = parseInt(document.getElementById('edit-ilvl').value, 10) || 1;
+  const implicits = collectMods('edit-implicits-list');
+  const explicits = collectMods('edit-explicits-list');
+  if (!typeLine) {
+    toast('Base type is required', 'err');
+    return;
+  }
+  if (!currentBuild.gear) currentBuild.gear = {};
+  const prev = currentBuild.gear[editingSlot];
+  currentBuild.gear[editingSlot] = {
+    rarity, name, typeLine, ilvl,
+    implicits,
+    mods: [...implicits, ...explicits],   // see Phase 2 mapPobToBuild
+    sockets: prev?.sockets || [],
+  };
+  markBuildEdited();
+  setCurrentBuild(currentBuild);   // persists + re-renders paperdoll
+  closeSlotEditor();
+  toast(`${SLOT_DISPLAY_NAMES[editingSlot]} saved`, 'ok');
+}
+
+function clearSlotEdit() {
+  if (!editingSlot || !currentBuild) return;
+  if (!currentBuild.gear?.[editingSlot]) { closeSlotEditor(); return; }
+  if (!confirm(`Clear ${SLOT_DISPLAY_NAMES[editingSlot]}?`)) return;
+  currentBuild.gear[editingSlot] = null;
+  markBuildEdited();
+  setCurrentBuild(currentBuild);
+  closeSlotEditor();
+  toast(`${SLOT_DISPLAY_NAMES[editingSlot]} cleared`, 'ok');
+}
+
+function closeSlotEditor() {
+  editingSlot = null;
+  document.getElementById('slot-editor-overlay').classList.remove('show');
+}
+
+// Mark the build as having been edited since import. Stats become "stale"
+// (Phase 8 will recompute) and Phase 6 export switches to synthesize mode.
+function markBuildEdited() {
+  currentBuild.editedSinceImport = true;
+  lastDecodedCode = null;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('slot-editor-overlay')?.classList.contains('show')) {
+    closeSlotEditor();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// SKILL EDITOR (Phase 7B)
+// ═════════════════════════════════════════════════════════════════════════
+// Edit currentBuild.skills (array of { mainSkill, supports[], slot,
+// gemLevel, quality, mainActive, enabled }). Save mutates in place + calls
+// markBuildEdited() (shared with the gear editor). Cancel discards the
+// working copy. The in-game-style gem picker is a second overlay (higher
+// z-index) that fills the focused gem input.
+
+let editingSkills = null;     // working copy during edit (deep-cloned)
+let gemPickerTarget = null;   // { grpIdx, kind: 'main'|'support', supIdx? }
+
+function openSkillEditor() {
+  if (!currentBuild) { toast('Load a build before editing skills', 'err'); return; }
+  editingSkills = JSON.parse(JSON.stringify(currentBuild.skills || []));
+  editingSkills.forEach(g => {
+    if (g.enabled === undefined) g.enabled = true;
+    if (!Array.isArray(g.supports)) g.supports = [];
+  });
+  if (!editingSkills.length) {
+    editingSkills.push({ mainSkill: '', supports: [], slot: '', gemLevel: 20, quality: 0, mainActive: true, enabled: true });
+  } else if (!editingSkills.some(g => g.mainActive)) {
+    editingSkills[0].mainActive = true;
+  }
+  const indexCount = Object.keys(POE2DB_SKILLS || {}).length;
+  document.getElementById('skill-editor-blurb').innerHTML = indexCount
+    ? `<span class="export-mode-pill synthesized">Phase 7B</span> <span style="margin-left:8px">Save commits to currentBuild; stats become "stale" until Phase 8. Gem picker indexes ${indexCount} active skill${indexCount === 1 ? '' : 's'} from PoE2DB; custom names always work.</span>`
+    : `<span class="export-mode-pill synthesized">Phase 7B</span> <span style="margin-left:8px">Gem picker has no PoE2DB data yet &mdash; run <code>node scrape-poe2db.js</code> to populate. Type any gem name; custom names always work.</span>`;
+  renderSkillGroups();
+  document.getElementById('skill-editor-overlay').classList.add('show');
+}
+
+function closeSkillEditor() {
+  editingSkills = null;
+  document.getElementById('skill-editor-overlay').classList.remove('show');
+}
+
+function renderSkillGroups() {
+  const host = document.getElementById('skill-groups-host');
+  host.innerHTML = editingSkills.map(renderSkillGroup).join('');
+}
+
+function renderSkillGroup(g, idx) {
+  const enabled = g.enabled !== false;
+  const mainCls = g.mainActive ? 'main-active' : '';
+  const cls = `skill-group ${mainCls} ${enabled ? '' : 'disabled'}`;
+  const supportsRows = (g.supports || []).map((sup, sIdx) => `
+    <div class="skill-row">
+      <span class="tag sup">SUP</span>
+      <div class="gem-cell">
+        <input class="gem-input" data-grp="${idx}" data-kind="support" data-sup="${sIdx}" value="${escAttr(sup)}" oninput="updateGemName(this)" placeholder="Support gem name">
+        <button class="gem-picker-btn" onclick="openGemPicker(${idx}, 'support', ${sIdx})" title="Pick gem">⌕</button>
+      </div>
+      <span></span><span></span>
+      <button class="rm-btn" onclick="removeSupportGem(${idx}, ${sIdx})" title="Remove">×</button>
+    </div>
+  `).join('');
+
+  return `<div class="${cls}" data-group="${idx}">
+    <div class="skill-group-head">
+      <span class="group-idx">GROUP ${idx + 1}</span>
+      <input class="group-slot" data-grp="${idx}" value="${escAttr(g.slot || '')}" oninput="updateGroupSlot(this)" placeholder="Slot label (e.g. Helmet 1)">
+      <div class="skill-group-chips">
+        <button class="skill-chip ${g.mainActive ? 'main' : ''}" onclick="setMainActive(${idx})">${g.mainActive ? '◉ MAIN' : '○ MAIN'}</button>
+        <button class="skill-chip ${enabled ? 'on enabled' : 'off enabled'}" onclick="toggleGroupEnabled(${idx})">${enabled ? 'ENABLED' : 'DISABLED'}</button>
+      </div>
+    </div>
+    <div class="skill-row">
+      <span class="tag main">MAIN</span>
+      <div class="gem-cell">
+        <input class="gem-input" data-grp="${idx}" data-kind="main" value="${escAttr(g.mainSkill || '')}" oninput="updateGemName(this)" placeholder="Main skill name (type or pick)">
+        <button class="gem-picker-btn" onclick="openGemPicker(${idx}, 'main')" title="Pick gem">⌕</button>
+      </div>
+      <input type="number" min="1" max="40" value="${g.gemLevel ?? 20}" data-grp="${idx}" oninput="updateGemLevel(this)" title="Gem level">
+      <input type="number" min="0" max="30" value="${g.quality ?? 0}" data-grp="${idx}" oninput="updateGemQuality(this)" title="Quality %">
+      <span></span>
+    </div>
+    ${supportsRows}
+    <div class="skill-group-actions">
+      <button class="add-sup" onclick="addSupportGem(${idx})">+ Add Support</button>
+      <div style="flex:1"></div>
+      <button class="rm-group" onclick="removeSkillGroup(${idx})">Remove Group</button>
+    </div>
+  </div>`;
+}
+
+function updateGemName(el) {
+  const idx = +el.dataset.grp;
+  const g = editingSkills[idx];
+  if (el.dataset.kind === 'main') {
+    g.mainSkill = el.value;
+  } else if (el.dataset.kind === 'support') {
+    g.supports[+el.dataset.sup] = el.value;
+  }
+}
+function updateGemLevel(el)   { editingSkills[+el.dataset.grp].gemLevel = parseInt(el.value, 10) || 1; }
+function updateGemQuality(el) { editingSkills[+el.dataset.grp].quality  = parseInt(el.value, 10) || 0; }
+function updateGroupSlot(el)  { editingSkills[+el.dataset.grp].slot     = el.value; }
+
+function toggleGroupEnabled(idx) {
+  editingSkills[idx].enabled = editingSkills[idx].enabled === false;
+  renderSkillGroups();
+}
+function setMainActive(idx) {
+  editingSkills.forEach((g, i) => g.mainActive = (i === idx));
+  renderSkillGroups();
+}
+function addSkillGroup() {
+  editingSkills.push({ mainSkill: '', supports: [], slot: '', gemLevel: 20, quality: 0, mainActive: false, enabled: true });
+  renderSkillGroups();
+}
+function removeSkillGroup(idx) {
+  if (editingSkills.length === 1) { toast('At least one skill group required', 'err'); return; }
+  const wasMain = editingSkills[idx].mainActive;
+  editingSkills.splice(idx, 1);
+  if (wasMain && editingSkills.length) editingSkills[0].mainActive = true;
+  renderSkillGroups();
+}
+function addSupportGem(idx) {
+  editingSkills[idx].supports = editingSkills[idx].supports || [];
+  editingSkills[idx].supports.push('');
+  renderSkillGroups();
+}
+function removeSupportGem(grpIdx, supIdx) {
+  editingSkills[grpIdx].supports.splice(supIdx, 1);
+  renderSkillGroups();
+}
+
+function saveSkillEdit() {
+  if (!editingSkills) return;
+  editingSkills.forEach(g => {
+    g.supports = (g.supports || []).map(s => (s || '').trim()).filter(Boolean);
+    g.mainSkill = (g.mainSkill || '').trim();
+  });
+  if (editingSkills.every(g => !g.mainSkill && !(g.supports || []).length)) {
+    toast('Add at least one gem before saving', 'err');
+    return;
+  }
+  const groupCount = editingSkills.length;   // capture before closeSkillEditor() nulls editingSkills
+  currentBuild.skills = editingSkills;
+  markBuildEdited();
+  setCurrentBuild(currentBuild);
+  closeSkillEditor();
+  toast(`Skills updated · ${groupCount} group${groupCount === 1 ? '' : 's'}`, 'ok');
+}
+
+// ── GEM PICKER ──────────────────────────────────────────────────────────
+function openGemPicker(grpIdx, kind, supIdx) {
+  gemPickerTarget = { grpIdx, kind, supIdx };
+  document.getElementById('gem-picker-search').value = '';
+  filterGemPicker('');
+  document.getElementById('gem-picker-overlay').classList.add('show');
+  setTimeout(() => document.getElementById('gem-picker-search').focus(), 30);
+}
+
+function closeGemPicker() {
+  gemPickerTarget = null;
+  document.getElementById('gem-picker-overlay').classList.remove('show');
+}
+
+function filterGemPicker(query) {
+  const q = (query || '').toLowerCase().trim();
+  const all = Object.keys(POE2DB_SKILLS || {}).sort();
+  const filtered = q ? all.filter(n => n.toLowerCase().includes(q)) : all;
+  const list = document.getElementById('gem-picker-list');
+  if (!filtered.length) {
+    list.innerHTML = `<div class="gem-picker-empty">${all.length ? 'No matches in PoE2DB index.' : 'PoE2DB index not loaded yet.'}<br>You can still use a custom name.</div>`;
+  } else {
+    list.innerHTML = filtered.slice(0, 200).map(n => {
+      const s = POE2DB_SKILLS[n] || {};
+      const meta = s.altQuality ? 'Has alt-quality' : '';
+      return `<div class="gem-picker-row" onclick='applyGemSelection(${JSON.stringify(n)})'>${escHtml(n)}${meta ? `<span class="meta">${escHtml(meta)}</span>` : ''}</div>`;
+    }).join('');
+  }
+  const customBtn = document.getElementById('gem-picker-use-custom');
+  const exactMatch = q && all.some(n => n.toLowerCase() === q);
+  if (q && !exactMatch) {
+    document.getElementById('gem-picker-custom-name').textContent = query;
+    customBtn.style.display = '';
+  } else {
+    customBtn.style.display = 'none';
+  }
+}
+
+function applyGemSelection(name) {
+  if (!gemPickerTarget) return;
+  const { grpIdx, kind, supIdx } = gemPickerTarget;
+  const g = editingSkills[grpIdx];
+  if (kind === 'main') g.mainSkill = name;
+  else if (kind === 'support') g.supports[supIdx] = name;
+  renderSkillGroups();
+  closeGemPicker();
+}
+function useCustomGem() {
+  const q = document.getElementById('gem-picker-search').value;
+  if (q.trim()) applyGemSelection(q.trim());
+}
+
+// ESC closes gem picker first, then skill editor
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const picker = document.getElementById('gem-picker-overlay');
+  if (picker?.classList.contains('show')) { closeGemPicker(); return; }
+  const editor = document.getElementById('skill-editor-overlay');
+  if (editor?.classList.contains('show')) closeSkillEditor();
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// TREE EDITOR (Phase 7C) — passive-tree paste-import
+// ═════════════════════════════════════════════════════════════════════════
+// Lets the user replace currentBuild.tree.url. Schema already exists
+// (tree.url + tree.allocatedNodes from Phase 2). Synthesize path already
+// emits the URL on export. This phase adds the entry point + a paste UI
+// + best-effort validation so a user can grab a creator's tree URL and
+// drop it into their build. Decoding the URL into named nodes is
+// deferred (needs PoE2 passive-tree JSON, post-launch).
+
+const TREE_URL_PATTERNS = [
+  { re: /pathofexile\.com\/(?:poe2\/)?passive-skill-tree\//i, source: 'PathOfExile.com (official)' },
+  { re: /pobb\.in\/tree\//i,                                  source: 'pobb.in' },
+  { re: /poeplanner\.com\//i,                                 source: 'PoEPlanner' },
+];
+
+function validateTreeUrl(url) {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return { state: 'empty' };
+  let recognized = null;
+  for (const p of TREE_URL_PATTERNS) {
+    if (p.re.test(trimmed)) { recognized = p.source; break; }
+  }
+  // Best-effort payload size estimate for official PoE URLs
+  let payloadBytes = null;
+  let estimatedNodes = null;
+  const m = trimmed.match(/\/passive-skill-tree\/([A-Za-z0-9_-]+)/);
+  if (m) {
+    try {
+      const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = b64 + '='.repeat((4 - b64.length % 4) % 4);
+      const bin = atob(padded);
+      payloadBytes = bin.length;
+      // PoE1 layout: 7-byte header, then 2 bytes per node ID. PoE2 may
+      // differ — we report the estimate but don't claim it's authoritative.
+      const headerBytes = 7;
+      if (payloadBytes > headerBytes) {
+        estimatedNodes = Math.floor((payloadBytes - headerBytes) / 2);
+      }
+    } catch (e) { /* not valid base64 — fall through */ }
+  }
+  if (!recognized) return { state: 'warn', msg: 'URL not recognized as a known passive-tree planner. Save anyway and PoB will try to parse it on import.' };
+  return { state: 'ok', msg: `${recognized}${payloadBytes != null ? ' · ' + payloadBytes + ' byte payload' : ''}${estimatedNodes != null ? ' · ~' + estimatedNodes + ' allocated nodes' : ''}` };
+}
+
+function openTreeEditor() {
+  if (!currentBuild) { toast('Load a build before editing the tree', 'err'); return; }
+  if (!currentBuild.tree) currentBuild.tree = { url: '', allocatedNodes: [], jewelSockets: [], masteries: [], treeVersion: '' };
+  const t = currentBuild.tree;
+  const allocCount = (t.allocatedNodes || []).length;
+  const masteryCount = (t.masteries || []).length;
+  document.getElementById('tree-editor-body').innerHTML = `
+    <div class="export-blurb">
+      <span class="export-mode-pill synthesized">Phase 7C</span>
+      <span style="margin-left:8px">Paste a passive-tree URL to replace the one in this build. Saving marks stats as stale and switches Phase 6 export to synthesize mode (the URL flows out as-is).</span>
+    </div>
+    <div class="tree-current-box">
+      <div class="tree-current-cell">
+        <div class="label">Allocated</div>
+        <div class="value ${allocCount ? '' : 'muted'}">${allocCount || 'none'}${allocCount ? ' nodes' : ''}</div>
+      </div>
+      <div class="tree-current-cell">
+        <div class="label">Masteries</div>
+        <div class="value ${masteryCount ? '' : 'muted'}">${masteryCount || 'none'}${masteryCount ? ' picked' : ''}</div>
+      </div>
+      <div class="tree-current-cell">
+        <div class="label">Tree Version</div>
+        <input class="tree-version-input" id="tree-version" value="${escAttr(t.treeVersion || '')}" placeholder="e.g. 0_1_poe2">
+      </div>
+    </div>
+    <div class="editor-field-label" style="margin-top:4px">Current URL</div>
+    <div class="tree-url-display ${t.url ? '' : 'empty'}">
+      ${t.url
+        ? `<a class="url-link" href="${escAttr(t.url)}" target="_blank" rel="noopener">${escHtml(t.url)}</a>
+           <a class="url-open" href="${escAttr(t.url)}" target="_blank" rel="noopener">↗ Open</a>`
+        : `<span class="url-link">No tree URL set</span>`}
+    </div>
+    <div class="editor-field-label" style="margin-top:8px">Paste new URL</div>
+    <textarea class="tree-paste-textarea" id="tree-paste" oninput="updateTreeValidation()" placeholder="https://www.pathofexile.com/passive-skill-tree/AAAABgMAAA..." spellcheck="false"></textarea>
+    <div class="tree-validation empty" id="tree-validation">Paste a URL above; validation appears here.</div>
+  `;
+  document.getElementById('tree-editor-overlay').classList.add('show');
+}
+
+function updateTreeValidation() {
+  const input = document.getElementById('tree-paste').value;
+  const v = validateTreeUrl(input);
+  const el = document.getElementById('tree-validation');
+  el.className = 'tree-validation ' + v.state;
+  el.textContent = v.state === 'empty'
+    ? 'Paste a URL above; validation appears here.'
+    : v.msg;
+}
+
+function closeTreeEditor() {
+  document.getElementById('tree-editor-overlay').classList.remove('show');
+}
+
+function saveTreeEdit() {
+  if (!currentBuild) return;
+  const newUrl = document.getElementById('tree-paste').value.trim();
+  const newVersion = document.getElementById('tree-version').value.trim();
+  if (!currentBuild.tree) currentBuild.tree = { url: '', allocatedNodes: [], jewelSockets: [], masteries: [], treeVersion: '' };
+  let changed = false;
+  if (newUrl && newUrl !== currentBuild.tree.url) {
+    currentBuild.tree.url = newUrl;
+    // Cached node IDs no longer match the pasted URL until something can
+    // decode it. Drop them so the editor's "Allocated" count doesn't
+    // mislead. PoB will repopulate on re-import.
+    currentBuild.tree.allocatedNodes = [];
+    currentBuild.tree.masteries = [];
+    changed = true;
+  }
+  if (newVersion !== (currentBuild.tree.treeVersion || '')) {
+    currentBuild.tree.treeVersion = newVersion;
+    changed = true;
+  }
+  if (!changed) {
+    toast('Nothing to save', 'err');
+    return;
+  }
+  markBuildEdited();
+  setCurrentBuild(currentBuild);
+  closeTreeEditor();
+  toast('Passive tree updated', 'ok');
+}
+
+function clearTreeEdit() {
+  if (!currentBuild?.tree) { closeTreeEditor(); return; }
+  if (!confirm('Clear the passive tree URL and allocated nodes?')) return;
+  currentBuild.tree = { url: '', allocatedNodes: [], jewelSockets: [], masteries: [], treeVersion: currentBuild.tree.treeVersion || '' };
+  markBuildEdited();
+  setCurrentBuild(currentBuild);
+  closeTreeEditor();
+  toast('Passive tree cleared', 'ok');
+}
+
+// ESC closes the tree editor too (separate handler — different from the
+// skill editor's gem-picker-priority handler)
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('tree-editor-overlay')?.classList.contains('show')) {
+    closeTreeEditor();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// PoB2 BRIDGE (v16) — semi-automated PoE2 character import workaround
+// ═════════════════════════════════════════════════════════════════════════
+// Proxy spawns PoB2 (POB2_PATH in .env). User does the import inside PoB2
+// (5 clicks), copies the build code, comes back to Forge and clicks "Paste
+// from Clipboard". The pasted code flows through the existing Phase 2
+// decoder so currentBuild populates normally. See header comment for the
+// OAuth investigation that motivated this design.
+
+let pob2Status = { configured: false, exists: false, pathHint: null, checked: false };
+let pob2StepState = 'init';   // 'init' | 'launched' | 'paste-ready' | 'imported' | 'failed'
+
+async function refreshPob2Status() {
+  const pill = document.getElementById('pob2-status-pill');
+  if (!pill) return;
+  try {
+    const r = await fetch(PROXY + '/pob2-status');
+    if (!r.ok) throw new Error('proxy unreachable');
+    pob2Status = await r.json();
+    pob2Status.checked = true;
+    if (pob2Status.exists) {
+      pill.className = 'pob2-status-pill ok';
+      pill.textContent = `READY · ${pob2Status.pathHint}`;
+    } else if (pob2Status.configured) {
+      pill.className = 'pob2-status-pill warn';
+      pill.textContent = 'POB2_PATH set but file missing';
+    } else {
+      pill.className = 'pob2-status-pill warn';
+      pill.textContent = 'POB2_PATH not configured';
+    }
+  } catch (e) {
+    pob2Status.checked = false;
+    pill.className = 'pob2-status-pill err';
+    pill.textContent = 'PROXY OFFLINE';
+  }
+}
+
+function openPob2Bridge() {
+  pob2StepState = 'init';
+  renderPob2Bridge();
+  document.getElementById('pob2-bridge-overlay').classList.add('show');
+  // Refresh status when opening — user may have edited .env since page load
+  refreshPob2Status().then(() => {
+    if (document.getElementById('pob2-bridge-overlay').classList.contains('show')) renderPob2Bridge();
+  });
+}
+
+function closePob2Bridge() {
+  document.getElementById('pob2-bridge-overlay').classList.remove('show');
+}
+
+function renderPob2Bridge() {
+  const body = document.getElementById('pob2-bridge-body');
+  const canLaunch = pob2Status.exists;
+  const launchedCls = (pob2StepState === 'launched' || pob2StepState === 'paste-ready' || pob2StepState === 'imported') ? 'done' : (canLaunch ? 'active' : '');
+  const pastedCls = pob2StepState === 'imported' ? 'done' : (pob2StepState === 'paste-ready' || pob2StepState === 'launched' ? 'active' : '');
+
+  let configHelp = '';
+  if (!pob2Status.configured) {
+    configHelp = `
+      <div class="pob2-config-help">
+        <strong>POB2_PATH not set.</strong> To enable auto-launch, add the path to PoB2's executable to your <code>.env</code>:<br><br>
+        <code>POB2_PATH=C:\\Program Files\\Path of Building Community (PoE2)\\Path of Building.exe</code><br><br>
+        Then restart the proxy. You can still use this wizard — just launch PoB2 yourself and use the "Paste from Clipboard" button when done.
+      </div>`;
+  } else if (!pob2Status.exists) {
+    configHelp = `
+      <div class="pob2-config-help">
+        <strong>POB2_PATH points to a missing file.</strong> Verify the path in your <code>.env</code> matches where PoB2 is actually installed, then restart the proxy.
+      </div>`;
+  }
+
+  body.innerHTML = `
+    <div class="export-blurb">
+      <span class="export-mode-pill synthesized">v16</span>
+      <span style="margin-left:8px">PoB2 has GGG-approved OAuth so it can fetch PoE2 characters. Five clicks inside PoB2 + one back here, and your live character lands in Forge.</span>
+    </div>
+    ${configHelp}
+    <div class="pob2-steps">
+      <div class="pob2-step ${launchedCls}">
+        <div>Open PoB2</div>
+        ${canLaunch
+          ? `<button class="step-action primary" onclick="launchPob2()">⛓ Launch PoB2</button>`
+          : `<span style="font-size:10px;color:var(--text-muted)">Open it yourself</span>`}
+      </div>
+      <div class="pob2-step ${pob2StepState === 'launched' || pob2StepState === 'paste-ready' ? 'active' : pob2StepState === 'imported' ? 'done' : ''}">
+        <div>Inside PoB2: <strong>Import/Export Build</strong> → <strong>Import from Path of Exile</strong> → sign in (browser) → pick character → <strong>Generate</strong> → <strong>Copy</strong></div>
+      </div>
+      <div class="pob2-step ${pastedCls}">
+        <div>Click <strong>Paste from Clipboard</strong> below (or paste manually)</div>
+      </div>
+    </div>
+    <textarea class="pob2-fallback-textarea" id="pob2-manual-paste" placeholder="…or paste the PoB code here if the clipboard button is blocked" oninput="onPob2ManualPaste(this.value)"></textarea>
+    <div class="pob2-result" id="pob2-result" style="display:none"></div>
+  `;
+}
+
+async function launchPob2() {
+  if (!pob2Status.exists) {
+    showPob2Result('warn', 'POB2_PATH not configured — open PoB2 yourself, then come back here when you have the code.');
+    return;
+  }
+  try {
+    const r = await fetch(PROXY + '/pob2-launch', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) { showPob2Result('err', data.error || 'Launch failed'); return; }
+    pob2StepState = 'launched';
+    renderPob2Bridge();   // re-render first; renderPob2Bridge() wipes the body
+    showPob2Result('ok', `PoB2 launched (pid ${data.pid}). Switch to it and import your character.`);
+  } catch (e) {
+    showPob2Result('err', 'Proxy offline — cannot launch PoB2. Open it yourself, then return here.');
+  }
+}
+
+async function pasteFromClipboard() {
+  let code = null;
+  try {
+    code = await navigator.clipboard.readText();
+  } catch (e) {
+    showPob2Result('warn', 'Browser blocked clipboard read. Paste manually into the textarea above.');
+    return;
+  }
+  if (!code || !code.trim()) {
+    showPob2Result('warn', 'Clipboard is empty. Copy the build code from PoB2 first.');
+    return;
+  }
+  await applyPob2Code(code.trim());
+}
+
+function onPob2ManualPaste(value) {
+  // Debounce-ish: if the textarea has plausible content (long string, mostly URL-safe chars), try to decode.
+  const trimmed = (value || '').trim();
+  if (trimmed.length < 50) return;
+  if (!/^[A-Za-z0-9_-]+$/.test(trimmed)) return;
+  applyPob2Code(trimmed);
+}
+
+async function applyPob2Code(code) {
+  try {
+    const xml = await decodePobCode(code);
+    const parsed = parsePobXml(xml);
+    const build = mapPobToBuild(parsed);
+    lastDecodedCode = code;
+    setCurrentBuild(build);
+    pob2StepState = 'imported';
+    const c = build.character || {};
+    renderPob2Bridge();   // re-render step classes first; this wipes body innerHTML
+    showPob2Result('ok', `Imported · ${c.name || 'Unnamed'} · L${c.level || '?'} · ${c.ascendancy || c.class || '?'}. Open Optimizer to scan upgrades, or close this and continue editing.`);
+  } catch (e) {
+    pob2StepState = 'failed';
+    showPob2Result('err', 'Decode failed: ' + (e.message || e));
+  }
+}
+
+function showPob2Result(cls, msg) {
+  const el = document.getElementById('pob2-result');
+  if (!el) return;
+  el.className = 'pob2-result ' + cls;
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+// ESC closes the PoB2 wizard
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('pob2-bridge-overlay')?.classList.contains('show')) {
+    closePob2Bridge();
+  }
+});
 
 function sendPobToOptimizer() {
   if (!lastDecodedBuild) return;
@@ -4828,6 +6179,7 @@ function init() {
   // the paperdoll will repaint with any newly-resolvable icons.
   loadPoe2dbData().catch(e => console.warn('PoE2DB data load failed:', e));
 
+  refreshPob2Status();  // v16: poll proxy for PoB2 bridge config
   // First-time visitors land on Welcome; returning users go to Optimizer
   // if they have a build, otherwise Welcome.
   const visited = localStorage.getItem(STORAGE_KEYS.visited);
@@ -4837,6 +6189,8 @@ function init() {
 
 init();
 </script>
+
+<div style="position:fixed;bottom:6px;left:12px;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.5px;color:#5a5040;z-index:60;pointer-events:none">This product isn't affiliated with or endorsed by Grinding Gear Games in any way.</div>
 
 </body>
 </html>
