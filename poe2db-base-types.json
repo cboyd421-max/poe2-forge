@@ -390,5 +390,54 @@
     "slot": "charm",
     "category": "Active Skill Gem",
     "page": "https://poe2db.tw/us/Ruby_Charm"
+  },
+  "Twin Crossbow": {
+    "icon": "icons/2HCrossbow05.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Weapons/TwoHandWeapons/Crossbows/2HCrossbow05.webp",
+    "page": "https://poe2db.tw/us/Twin_Crossbow",
+    "slot": "weapon",
+    "category": "Crossbows"
+  },
+  "Runeforged Hallowed Crown": {
+    "icon": "icons/HelmetIntStr04.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Helmets/Basetypes/HelmetIntStr04.webp",
+    "page": "https://poe2db.tw/us/Runeforged_Hallowed_Crown",
+    "slot": "helmet",
+    "category": "Helmets"
+  },
+  "Juggernaut Plate": {
+    "icon": "icons/BodyStr09.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/BodyArmours/Basetypes/BodyStr09.webp",
+    "page": "https://poe2db.tw/us/Juggernaut_Plate",
+    "slot": "body",
+    "category": "Body Armours"
+  },
+  "Aged Cuffs": {
+    "icon": "icons/GlovesIntStr02.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Gloves/Basetypes/GlovesIntStr02.webp",
+    "page": "https://poe2db.tw/us/Aged_Cuffs",
+    "slot": "gloves",
+    "category": "Gloves"
+  },
+  "Covered Sabatons": {
+    "icon": "icons/BootsStrDex04.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Boots/Basetypes/BootsStrDex04.webp",
+    "page": "https://poe2db.tw/us/Covered_Sabatons",
+    "slot": "boots",
+    "category": "Boots"
+  },
+  "Lapis Amulet": {
+    "icon": "icons/LapisAmulet.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Amulets/Basetypes/LapisAmulet.webp",
+    "page": "https://poe2db.tw/us/Lapis_Amulet",
+    "slot": "amulet",
+    "category": "Amulets"
+  },
+  "Rawhide Belt": {
+    "icon": "icons/Belt01.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Belts/Basetypes/Belt01.webp",
+    "page": "https://poe2db.tw/us/Rawhide_Belt",
+    "slot": "belt",
+    "category": "Belts"
   }
 }

@@ -108,6 +108,8 @@
     • null out lastDecodedCode so the Phase 6 exporter automatically falls
       through from "roundtrip mode" to "synthesize mode" — the original PoB
       bytes no longer describe this build, so we re-emit fresh XML.
+  Historical Phase 6 behavior below is superseded by the September export fix:
+  unchanged builds retain their original code; edited/minimal exports are unavailable.
   Phase 6 closes the import/export loop. The Phase 2 decoder turns PoB2
   codes → currentBuild; this phase reverses it: currentBuild → PoB2 code.
   Two paths:
@@ -3027,8 +3029,8 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
       <!-- Filled by openExportModal() -->
     </div>
     <div class="export-actions">
-      <button class="export-btn primary" id="export-copy-btn" onclick="copyExportCode()">📋 Copy code</button>
-      <button class="export-btn ghost" onclick="downloadExportXml()">⬇ Download XML</button>
+      <button class="export-btn primary" id="export-copy-btn" onclick="copyExportCode()" disabled>📋 Copy code</button>
+      <button class="export-btn ghost" id="export-download-btn" onclick="downloadExportXml()" disabled>⬇ Download XML</button>
       <button class="export-btn ghost tracker" title="In-game tracker code format pending GGG spec (Phase 6.2 — locked until they publish)" disabled>In-game tracker (TBD)</button>
       <div style="flex:1"></div>
       <button class="export-btn ghost" onclick="closeExportModal()">Done</button>
@@ -4113,8 +4115,7 @@ async function decodePobInput() {
   try {
     const xmlText = await decodePobCode(raw);
     const parsed = parsePobXml(xmlText);
-    lastDecodedBuild = mapPobToBuild(parsed);
-    lastDecodedCode = raw;  // captured for "Save to gallery" in Phase 3
+    lastDecodedBuild = mapPobToBuild(parsed, raw);
     renderPobSummary(parsed, lastDecodedBuild);
     document.getElementById('pob-send-btn').disabled = false;
     setPobStatus(`Decoded · ${parsed.build.className || '?'} · L${parsed.build.level || '?'} · ${parsed.items.length} items`, 'ok');
@@ -4321,7 +4322,7 @@ const POB_SLOT_TO_KEY = {
   'Ring 2':         'ring_r',
 };
 
-function mapPobToBuild(parsed) {
+function mapPobToBuild(parsed, originalCode = null) {
   const gear = {
     weapon: null, offhand: null, helmet: null, body: null, gloves: null,
     boots: null, belt: null, amulet: null, ring_l: null, ring_r: null,
@@ -4393,6 +4394,8 @@ function mapPobToBuild(parsed) {
 
   return {
     source: 'pob2',
+    // Keep the complete source with this build, including data Forge does not map.
+    originalPobCode: typeof originalCode === 'string' ? originalCode.trim() : null,
     importedAt: new Date().toISOString(),
     character: {
       name: 'PoB Build',
@@ -4480,166 +4483,43 @@ function renderPobSummary(parsed, build) {
   `;
 }
 
-// Keep the raw PoB code alongside the parsed result so the gallery can
-// "Save current build" and Phase 6 export can do lossless round-trip.
-let lastDecodedCode = null;
-
-// ═════════════════════════════════════════════════════════════════════════
-// PoB2 EXPORT (Phase 6) — inverse of the Phase 2 decoder
-// ═════════════════════════════════════════════════════════════════════════
-// pipeline: XML → utf-8 bytes → CompressionStream('deflate') → base64-urlsafe
-//
-// Two paths:
-//   1. currentBuild.source === 'pob2' AND lastDecodedCode is set → return
-//      the original code unchanged. Guarantees byte-for-byte round-trip.
-//   2. Otherwise synthesize a minimal PoB2 XML from currentBuild fields.
-//      Good enough for PoB2 to re-import; loses metadata PoB cares about
-//      (TreeView zoom, Calcs config, notes) but preserves the build itself.
-//
-// PoB2's web import accepts both deflate (RFC 1950 zlib framed) and raw
-// deflate. We emit RFC 1950 to match what PoB itself emits.
+// PoB2 export preserves the complete source for an unchanged imported build.
+// The source is stored on the build itself, so reloads and unrelated decoder
+// previews cannot replace it. Forge's reduced schema cannot recreate PoB2 XML.
+function getOriginalPobCode(build) {
+  if (!build || build.source !== 'pob2' || build.editedSinceImport) return null;
+  return typeof build.originalPobCode === 'string' && build.originalPobCode.trim()
+    ? build.originalPobCode.trim() : null;
+}
 
 async function encodePobCode(build) {
   if (!build) throw new Error('No build to export');
-  // Fast path: PoB-decoded build with original code captured
-  if (build.source === 'pob2' && lastDecodedCode) {
-    return { code: lastDecodedCode, mode: 'roundtrip', xml: null };
+  if (build.editedSinceImport) {
+    throw new Error('Exporting edited builds is not supported yet. Your edits remain saved in Forge. To export an unchanged build, open it from PoB2 or the gallery.');
   }
-  const xml = synthesizePobXml(build);
-  const bytes = new TextEncoder().encode(xml);
-  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'));
-  const compressed = new Uint8Array(await new Response(stream).arrayBuffer());
-  // Base64 then URL-safe substitute + strip padding
-  let bin = '';
-  for (let i = 0; i < compressed.length; i++) bin += String.fromCharCode(compressed[i]);
-  const code = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  return { code, mode: 'synthesized', xml };
-}
-
-// XML escape — minimal, safe for attribute and text contexts in our usage.
-function xmlEsc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c =>
-    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;' }[c])
-  );
-}
-
-// Inverse of the POB_SLOT_TO_KEY map in Phase 2.
-const KEY_TO_POB_SLOT = {
-  weapon:  'Weapon 1',
-  offhand: 'Weapon 2',
-  helmet:  'Helmet',
-  body:    'Body Armour',
-  gloves:  'Gloves',
-  boots:   'Boots',
-  amulet:  'Amulet',
-  belt:    'Belt',
-  ring_l:  'Ring 1',
-  ring_r:  'Ring 2',
-};
-
-// Map currentBuild.character.class to PoB's classId enum. PoB's classId list
-// for PoE2 (per their Lua source): Warrior=0, Ranger=1, Witch=2, Sorceress=3,
-// Monk=4, Mercenary=5, Druid=6, Templar=7 (approximate — refined post-0.5).
-const POB_CLASS_ID = {
-  Warrior: 0, Ranger: 1, Witch: 2, Sorceress: 3,
-  Monk: 4, Mercenary: 5, Druid: 6, Templar: 7,
-};
-
-function synthesizePobXml(build) {
-  const c = build.character || {};
-  const s = build.stats || {};
-  const gear = build.gear || {};
-  const skills = build.skills || [];
-
-  // PlayerStat tags — keys match what PoB's calc engine outputs and what our
-  // Phase 2 mapper reads back in.
-  const statRows = [];
-  const pushStat = (name, val) => {
-    if (val == null || val === '' || (typeof val === 'number' && !isFinite(val))) return;
-    statRows.push(`    <PlayerStat stat="${xmlEsc(name)}" value="${xmlEsc(val)}"/>`);
-  };
-  pushStat('Life', s.life);
-  pushStat('EnergyShield', s.es);
-  pushStat('Mana', s.mana);
-  pushStat('Armour', s.armour);
-  pushStat('Evasion', s.evasion);
-  pushStat('FireResist', s.fireRes);
-  pushStat('ColdResist', s.coldRes);
-  pushStat('LightningResist', s.lightRes);
-  pushStat('ChaosResist', s.chaosRes);
-  pushStat('Str', s.str);
-  pushStat('Dex', s.dex);
-  pushStat('Int', s.int);
-  pushStat('CombinedDPS', s.dps);
-  pushStat('TotalEHP', s.ehp);
-
-  // Items: assign IDs in slot order, emit Slot bindings + Item bodies.
-  const items = [];
-  const slots = [];
-  let nextId = 1;
-  for (const [key, item] of Object.entries(gear)) {
-    if (!item) continue;
-    const pobSlot = KEY_TO_POB_SLOT[key];
-    if (!pobSlot) continue;
-    const id = nextId++;
-    slots.push(`      <Slot itemPbURL="" name="${xmlEsc(pobSlot)}" itemId="${id}"/>`);
-    items.push(serializeItem(id, item));
+  const code = getOriginalPobCode(build);
+  if (!code) {
+    throw new Error('This saved build is missing its original PoB2 code. Import the original code once through Theorycraft → PoB2 Decoder, then send it to Optimizer. Future reloads will keep the complete export.');
   }
-
-  // Skills: one SkillSet, each Skill is a socket group with its gems.
-  // Phase 7B: emit per-group enabled state (was hardcoded "true" in v12/v13).
-  const skillRows = skills.map((sg, idx) => {
-    const groupEnabled = sg.enabled !== false ? 'true' : 'false';
-    const gems = [];
-    if (sg.mainSkill) {
-      gems.push(`        <Gem nameSpec="${xmlEsc(sg.mainSkill)}" enabled="${groupEnabled}" level="${sg.gemLevel || 20}" quality="${sg.quality || 0}" skillId=""/>`);
-    }
-    for (const sup of (sg.supports || [])) {
-      gems.push(`        <Gem nameSpec="${xmlEsc(sup)}" enabled="${groupEnabled}" level="${sg.gemLevel || 20}" quality="0" skillId=""/>`);
-    }
-    const mainActive = sg.mainActive ? '1' : '0';
-    return `      <Skill mainActiveSkill="${mainActive}" enabled="${groupEnabled}" slot="${xmlEsc(sg.slot || '')}" label="">
-${gems.join('\n')}
-      </Skill>`;
-  });
-
-  const classId = POB_CLASS_ID[c.class] ?? 0;
-  const treeUrl = build.tree?.url || '';
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<PathOfBuilding2>
-  <Build level="${c.level || 1}" className="${xmlEsc(c.class || 'Warrior')}" ascendClassName="${xmlEsc(c.ascendancy || '')}" characterLevelAutoMode="false" targetVersion="0_1" mainSocketGroup="1" viewMode="TREE">
-${statRows.join('\n')}
-  </Build>
-  <Tree activeSpec="1">
-    <Spec title="Default" treeVersion="0_1_poe2" classId="${classId}" ascendClassId="0">
-      <URL>${xmlEsc(treeUrl)}</URL>
-      <Sockets/>
-      <Overrides/>
-    </Spec>
-  </Tree>
-  <Notes>Exported from POE2 Forge v17 on ${new Date().toISOString()}</Notes>
-  <NotesHTML/>
-  <TreeView searchStr="" zoomLevel="3" showHeatMap="false"/>
-  <Items activeItemSet="1" useSecondWeaponSet="false">
-    <ItemSet id="1" useSecondWeaponSet="false">
-${slots.join('\n')}
-    </ItemSet>
-${items.join('\n')}
-  </Items>
-  <Skills sortGemsByDPS="true" matchGemLevelToCharacterLevel="false" activeSkillSet="1" defaultGemQuality="0" showSupportGemTypes="ALL" defaultGemLevel="20" showAltQualityGems="true">
-    <SkillSet id="1">
-${skillRows.join('\n')}
-    </SkillSet>
-  </Skills>
-</PathOfBuilding2>`;
+  return { code, mode: 'roundtrip', xml: null };
 }
 
 // ── EXPORT MODAL HANDLERS (Phase 6) ─────────────────────────────────────
 let lastExportedCode = null;
 let lastExportedXml = null;
+let exportRequestId = 0;
+
+function setExportActionsEnabled(enabled) {
+  document.getElementById('export-copy-btn').disabled = !enabled;
+  document.getElementById('export-download-btn').disabled = !enabled;
+}
 
 async function openExportModal() {
+  const requestId = ++exportRequestId;
+  lastExportedCode = null;
+  lastExportedXml = null;
+  setExportActionsEnabled(false);
+  const exportingBuild = currentBuild;
   if (!currentBuild) {
     toast('Load a build first', 'err');
     return;
@@ -4650,10 +4530,8 @@ async function openExportModal() {
   overlay.classList.add('show');
 
   try {
-    const { code, mode, xml } = await encodePobCode(currentBuild);
-    lastExportedCode = code;
-    lastExportedXml = xml;
-    // Self-validate: decode our own output to confirm it parses
+    const { code } = await encodePobCode(exportingBuild);
+    // Check encoding/XML format; this is not a live PoB2 compatibility test.
     let validation = { ok: false, msg: 'unvalidated' };
     try {
       const xmlBack = await decodePobCode(code);
@@ -4665,14 +4543,16 @@ async function openExportModal() {
     } catch (e) {
       validation = { ok: false, msg: 'Decode-back failed: ' + (e.message || e) };
     }
-    const c = currentBuild.character || {};
-    const modePill = mode === 'roundtrip'
-      ? '<span class="export-mode-pill roundtrip">Roundtrip · original PoB code</span>'
-      : '<span class="export-mode-pill synthesized">Synthesized · minimal PoB2 XML</span>';
+    if (requestId !== exportRequestId || exportingBuild !== currentBuild) return;
+    if (!validation.ok) throw new Error(validation.msg);
+    const c = exportingBuild.character || {};
+    const modePill = '<span class="export-mode-pill roundtrip">Unchanged · original PoB2 code</span>';
+    lastExportedCode = code;
+    setExportActionsEnabled(true);
     body.innerHTML = `
       <div class="export-blurb">
         ${modePill}
-        <span style="margin-left:8px">Paste this code into <strong>Path of Building 2</strong> via Import → From Code, or share it anywhere PoB codes work (pobb.in, Discord, Reddit).</span>
+        <span style="margin-left:8px">Paste into <strong>Path of Building 2</strong> using Import/Export Build. The code is unchanged from your original PoB2 import.</span>
       </div>
       <textarea class="export-textarea" id="export-code" readonly>${escHtml(code)}</textarea>
       <div class="export-meta">
@@ -4685,7 +4565,7 @@ async function openExportModal() {
           <div class="export-meta-val">${code.length.toLocaleString()} characters (${Math.ceil(code.length * 0.75 / 1024 * 10)/10} KB compressed)</div>
         </div>
         <div class="export-meta-block">
-          <div class="export-meta-title">Self-validate</div>
+          <div class="export-meta-title">Format check</div>
           <div class="export-meta-val ${validation.ok ? 'ok' : 'warn'}">${validation.ok ? '✓ ' : '! '}${escHtml(validation.msg)}</div>
         </div>
         <div class="export-meta-block">
@@ -4695,11 +4575,16 @@ async function openExportModal() {
       </div>
     `;
   } catch (e) {
+    if (requestId !== exportRequestId) return;
+    lastExportedCode = null;
+    lastExportedXml = null;
+    setExportActionsEnabled(false);
     body.innerHTML = `<div class="pob-error-detail">${escHtml(e.message || String(e))}</div>`;
   }
 }
 
 function closeExportModal() {
+  exportRequestId++;
   document.getElementById('export-overlay').classList.remove('show');
 }
 
@@ -4745,43 +4630,15 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-function serializeItem(id, item) {
-  const rarity = (item.rarity || 'rare').toUpperCase();
-  const name = item.name || item.typeLine || 'Unknown Item';
-  const typeLine = item.typeLine || item.name || 'Unknown Type';
-  const ilvl = item.ilvl ?? 1;
-  const sockets = Array.isArray(item.sockets) && item.sockets.length
-    ? item.sockets.filter(s => s).join('-')
-    : '';
-  const implicits = item.implicits || [];
-  const mods = (item.mods || []).filter(m => !implicits.includes(m));
-  // PoB item body is plain text, not XML — we keep it inside the <Item>
-  // tag with newlines preserved. Mod lines escape any '&' / '<' just in case.
-  const body = [
-    `Rarity: ${rarity}`,
-    name,
-    typeLine,
-    `Item Level: ${ilvl}`,
-    `Quality: 0`,
-    `Sockets: ${sockets}`,
-    `LevelReq: 1`,
-    `Implicits: ${implicits.length}`,
-    ...implicits,
-    ...mods,
-  ].join('\n');
-  return `    <Item id="${id}">
-${xmlEsc(body)}
-    </Item>`;
-}
+
 
 // ═════════════════════════════════════════════════════════════════════════
 // SLOT EDITOR (Phase 7A) — Gear mod editor
 // ═════════════════════════════════════════════════════════════════════════
 // Edit any of the 10 main-gear slots in place. On save we mutate
-// currentBuild.gear[slot], set editedSinceImport (stats stale until the
-// Phase 8 calc engine recomputes), and null out lastDecodedCode so Phase 6
-// export falls through from roundtrip to synthesize mode — the original
-// PoB bytes no longer describe this build.
+// currentBuild.gear[slot] and set editedSinceImport (stats stale until the
+// calc engine recomputes). Export stays unavailable for edited builds until
+// a serializer can preserve the complete PoB2 build.
 
 let editMode = false;
 let editingSlot = null;
@@ -4929,10 +4786,9 @@ function closeSlotEditor() {
 }
 
 // Mark the build as having been edited since import. Stats become "stale"
-// (Phase 8 will recompute) and Phase 6 export switches to synthesize mode.
+// (Phase 8 will recompute). The original code no longer describes this build.
 function markBuildEdited() {
   currentBuild.editedSinceImport = true;
-  lastDecodedCode = null;
 }
 
 document.addEventListener('keydown', e => {
@@ -4967,7 +4823,7 @@ function openSkillEditor() {
   }
   const indexCount = Object.keys(POE2DB_SKILLS || {}).length;
   document.getElementById('skill-editor-blurb').innerHTML = indexCount
-    ? `<span class="export-mode-pill synthesized">Phase 7B</span> <span style="margin-left:8px">Save commits to currentBuild; stats become "stale" until Phase 8. Gem picker indexes ${indexCount} active skill${indexCount === 1 ? '' : 's'} from PoE2DB; custom names always work.</span>`
+    ? `<span class="export-mode-pill synthesized">Phase 7B</span> <span style="margin-left:8px">Changes are saved in Forge; exporting edited builds is not supported yet. Stats stay stale until recalculation is available. Gem picker indexes ${indexCount} active skill${indexCount === 1 ? '' : 's'} from PoE2DB; custom names always work.</span>`
     : `<span class="export-mode-pill synthesized">Phase 7B</span> <span style="margin-left:8px">Gem picker has no PoE2DB data yet &mdash; run <code>node scrape-poe2db.js</code> to populate. Type any gem name; custom names always work.</span>`;
   renderSkillGroups();
   document.getElementById('skill-editor-overlay').classList.add('show');
@@ -5202,7 +5058,7 @@ function openTreeEditor() {
   document.getElementById('tree-editor-body').innerHTML = `
     <div class="export-blurb">
       <span class="export-mode-pill synthesized">Phase 7C</span>
-      <span style="margin-left:8px">Paste a passive-tree URL to replace the one in this build. Saving marks stats as stale and switches Phase 6 export to synthesize mode (the URL flows out as-is).</span>
+      <span style="margin-left:8px">Paste a passive-tree URL to replace the one in this build. Saving marks stats as stale. Exporting edited builds is not supported yet.</span>
     </div>
     <div class="tree-current-box">
       <div class="tree-current-cell">
@@ -5434,8 +5290,7 @@ async function applyPob2Code(code) {
   try {
     const xml = await decodePobCode(code);
     const parsed = parsePobXml(xml);
-    const build = mapPobToBuild(parsed);
-    lastDecodedCode = code;
+    const build = mapPobToBuild(parsed, code);
     setCurrentBuild(build);
     pob2StepState = 'imported';
     const c = build.character || {};
@@ -5590,7 +5445,7 @@ function renderGallery() {
 
   // Update save-bar visibility based on whether we have something to save
   const saveBar = document.getElementById('gallery-save-bar');
-  if (currentBuild && currentBuild.source === 'pob2' && lastDecodedCode) {
+  if (getOriginalPobCode(currentBuild)) {
     saveBar.style.display = '';
     document.getElementById('save-bar-name').textContent =
       `${currentBuild.character?.ascendancy || currentBuild.character?.class || 'PoB Build'} · L${currentBuild.character?.level || '?'}`;
@@ -5658,11 +5513,10 @@ async function loadGalleryBuild(id) {
   try {
     const xmlText = await decodePobCode(code);
     const parsed = parsePobXml(xmlText);
-    const build = mapPobToBuild(parsed);
+    const build = mapPobToBuild(parsed, code);
     // Stamp creator/name onto the character object so the badge reads nicely.
     build.character.name = entry.name;
     lastDecodedBuild = build;
-    lastDecodedCode = code;
     // Reset scan state, push to currentBuild, jump to Optimizer.
     allResults = []; filteredResults = []; selectedItem = null; activeSlot = null;
     setCurrentBuild(build);
@@ -5674,8 +5528,9 @@ async function loadGalleryBuild(id) {
 }
 
 function saveCurrentToGallery() {
-  if (!currentBuild || currentBuild.source !== 'pob2' || !lastDecodedCode) {
-    toast('Only PoB-decoded builds can be saved (GGG-imported chars need re-import each time)', 'err');
+  const code = getOriginalPobCode(currentBuild);
+  if (!code) {
+    toast('Gallery saving requires an unchanged build with its original PoB2 code.', 'err');
     return;
   }
   const c = currentBuild.character || {};
@@ -5694,7 +5549,7 @@ function saveCurrentToGallery() {
     playstyle: '',
     tier: 'endgame',
     description: '',
-    code: lastDecodedCode,
+    code,
     savedAt: new Date().toISOString(),
   });
   persistSavedBuilds(saved);

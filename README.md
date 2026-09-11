@@ -30,7 +30,7 @@ OAuth registration status unverified; direct character import unavailable. Use t
 - **Theorycraft → Build Gallery** — curated league-ready builds plus your own saved entries via `localStorage`
 - **Theorycraft → S-Rank Scanner** — pattern-matches builds for the "downside text negated by ascendancy keystone" pattern; scan your current build or pick a class + ascendancy + skill + item combo manually
 - **Theorycraft → Advanced Thaumaturgy** — searchable alt-quality skill reference (data from PoE2DB via the bundled scraper)
-- **Export Build** — round-trips back to a PoB2 paste code; lossless for PoB-sourced builds, synthesized minimal XML for everything else
+- **Export Build** — returns the complete original PoB2 code for an unchanged imported build, including after a reload. Exporting edited builds is not supported yet.
 - **Gear Editor / Skill Editor / Tree paste-import** — edit any slot, gem group, or the passive-tree URL in place
 - **PoB2 Bridge** — "Connect via PoB2" launches PoB2 (GGG-approved OAuth), walks you through its import flow, then ingests the resulting code via clipboard
 
@@ -84,9 +84,11 @@ No GGG credentials go in `.env`. If you're upgrading from v2.x, delete `POESESSI
 
 **Theorycraft.** The S-Rank Scanner pattern-matches for downside-negation interactions (Last Lament + Lich Eternal Life being the canonical case). The Advanced Thaumaturgy reference surfaces alt-quality effects that delete a downside — Gemling fuel.
 
-**Edit and export.** Toggle EDIT MODE on the paperdoll to modify gear; Edit Skills / Edit Passive Tree from the left panel. Export back to a PoB2 code any time.
+**Edit and export.** Toggle EDIT MODE on the paperdoll to modify gear; Edit Skills / Edit Passive Tree from the left panel. Edits are saved in Forge, but edited-build export is not supported yet. An unchanged PoB2 import can be exported with its original code.
 
 ## Troubleshooting
+
+**PoB2 rejects a Forge export / original code missing.** Older versions forgot the original PoB2 code on reload and generated incomplete XML with an unsupported tree version. Import the original PoB2 code again through Theorycraft → PoB2 Decoder and send it to Optimizer. Forge now stores that code with the build. The export's format check confirms decoding only; it is not a live test inside PoB2.
 
 **"SERVER OFFLINE" pill.** The local server isn't running. Start it with `node poe2forge-proxy.js`. Theorycraft tools work without it; slot clicks fall back to opening the trade site without a prefilled query.
 

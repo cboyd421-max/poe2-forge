@@ -174,6 +174,7 @@ const SEED_UNIQUES = [
   // Common project-mentioned uniques worth pre-fetching (PoE2-existing only)
   "Atziri's_Acuity", "Astramentis", "Original_Sin",
   "Hand_of_Wisdom_and_Action",
+  "Meginords_Girdle",
   // SKIPPED — PoE2DB pages don't expose the actual icon in static HTML
   // (only show related items as Pilgrim's Image / Kulemak's Birth / Token
   // of Passage). Let the frontend fall back to base-type art. Revisit
@@ -191,9 +192,11 @@ const SEED_BASES = [
   { name: 'Stellar_Amulet', slot: 'amulet' }, { name: 'Solar_Amulet', slot: 'amulet' },
   { name: 'Gold_Amulet', slot: 'amulet' }, { name: 'Lazuli_Amulet', slot: 'amulet' },
   { name: 'Crimson_Amulet', slot: 'amulet' }, { name: 'Bloodstone_Amulet', slot: 'amulet' },
+  { name: 'Lapis_Amulet', slot: 'amulet' },
   // Belts
   { name: 'Heavy_Belt', slot: 'belt' }, { name: 'Mind_Belt', slot: 'belt' },
   { name: 'Utility_Belt', slot: 'belt' }, { name: 'Linen_Belt', slot: 'belt' },
+  { name: 'Rawhide_Belt', slot: 'belt' },
   // Rings
   { name: 'Lapis_Ring', slot: 'ring_l' }, { name: 'Iolite_Ring', slot: 'ring_l' },
   { name: 'Pearl_Ring', slot: 'ring_l' }, { name: 'Topaz_Ring', slot: 'ring_l' },
@@ -206,22 +209,27 @@ const SEED_BASES = [
   { name: 'Armoured_Vest', slot: 'body' }, { name: 'Champion_Cuirass', slot: 'body' },
   { name: 'Wyrmscale_Doublet', slot: 'body' }, { name: 'Crystalline_Robe', slot: 'body' },
   { name: 'Smuggler_Coat', slot: 'body' },
+  { name: 'Juggernaut_Plate', slot: 'body' },
   // Helmets
   { name: 'Soul_Mask', slot: 'helmet' }, { name: 'Ancestral_Tiara', slot: 'helmet' },
   { name: 'Martyr_Crown', slot: 'helmet' }, { name: 'Pilgrim_Hood', slot: 'helmet' },
   { name: 'Heavy_Crown', slot: 'helmet' }, { name: 'Iron_Hat', slot: 'helmet' },
+  { name: 'Runeforged_Hallowed_Crown', slot: 'helmet' },
   // Gloves
   { name: 'Stealth_Gloves', slot: 'gloves' }, { name: 'Gauze_Wraps', slot: 'gloves' },
   { name: 'Massive_Mitts', slot: 'gloves' }, { name: 'Knit_Gloves', slot: 'gloves' },
   { name: 'Visceral_Bracers', slot: 'gloves' },
+  { name: 'Aged_Cuffs', slot: 'gloves' },
   // Boots
   { name: 'Stealth_Boots', slot: 'boots' }, { name: 'Charmed_Shoes', slot: 'boots' },
   { name: 'Tasalian_Greaves', slot: 'boots' }, { name: 'Vaal_Greaves', slot: 'boots' },
   { name: 'Pilgrim_Sandals', slot: 'boots' }, { name: 'Heelstrap_Boots', slot: 'boots' },
+  { name: 'Covered_Sabatons', slot: 'boots' },
   // Weapons
   { name: 'Crude_Bow', slot: 'weapon' }, { name: 'Long_Bow', slot: 'weapon' },
   { name: 'Obliterator_Bow', slot: 'weapon' }, { name: 'Recurve_Bow', slot: 'weapon' },
   { name: 'Heavy_Crossbow', slot: 'weapon' }, { name: 'Tense_Crossbow', slot: 'weapon' },
+  { name: 'Twin_Crossbow', slot: 'weapon' },
   { name: 'Quarterstaff', slot: 'weapon' }, { name: 'Pact_Quarterstaff', slot: 'weapon' },
   { name: 'Shrine_Sceptre', slot: 'weapon' }, { name: 'Omen_Sceptre', slot: 'weapon' },
   { name: 'Iron_Sceptre', slot: 'weapon' }, { name: 'Attuned_Wand', slot: 'weapon' },
