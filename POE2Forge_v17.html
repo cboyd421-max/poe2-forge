@@ -922,6 +922,7 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .subtab-bar {
   display: flex;
+  overflow-x: auto;
   background: var(--panel-bg-strong);
   border-bottom: 1px solid var(--border);
   padding: 0 24px;
@@ -959,6 +960,38 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
   padding: 40px 60px;
 }
 .subtab-content.active { display: block; }
+
+/* Game Planner keeps guide recommendations separate from the PoB2 character. */
+.planner-root { max-width: 1120px; margin: 0 auto; color: var(--text); }
+.planner-heading { font: 24px 'Orbitron', sans-serif; color: var(--gold); margin: 0 0 12px; }
+.planner-blurb, .planner-help { color: var(--text-dim); line-height: 1.7; font-size: 13px; }
+.planner-help a { color: var(--blue); }
+.planner-import, .planner-card { background: var(--panel-bg-strong); border: 1px solid var(--border); padding: 22px; margin-top: 20px; border-radius: 6px; }
+.planner-actions { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin:16px 0; }
+.planner-actions input[type=file] { max-width:100%; font-size:13px; }
+.planner-status { min-height:24px; color:var(--green); font-size:13px; white-space:pre-wrap; }
+.planner-status.error { color:#ff9696; }
+.planner-fields { display:grid; grid-template-columns:2fr 1fr; gap:16px; }
+.planner-field { display:flex; flex-direction:column; gap:7px; font-size:12px; color:var(--text-dim); }
+.planner-field.wide { grid-column:1 / -1; }
+.planner-field input, .planner-field textarea, .planner-json { box-sizing:border-box; width:100%; border:1px solid var(--border); border-radius:4px; background:var(--surface); color:var(--text); padding:12px; font:14px sans-serif; }
+.planner-field textarea { min-height:90px; resize:vertical; }
+.planner-json { min-height:210px; font:12px monospace; margin-top:12px; resize:vertical; }
+.planner-counts { display:flex; flex-wrap:wrap; gap:12px; margin-top:20px; }
+.planner-counts span { padding:12px 18px; border:1px solid var(--border); background:var(--surface); border-radius:4px; color:var(--gold); font:12px 'Share Tech Mono', monospace; }
+.planner-report { border-left:3px solid var(--gold); padding:12px 18px; margin:16px 0; background:var(--surface); font-size:13px; line-height:1.6; }
+.planner-report ul { margin:8px 0; padding-left:20px; }
+.planner-report li { overflow-wrap:anywhere; }
+.planner-entries { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin:12px 0; }
+.planner-entry { min-width:0; padding:14px; border:1px solid var(--border); border-radius:4px; background:var(--surface); overflow-wrap:anywhere; }
+.planner-entry strong { color:var(--gold); font-size:13px; }
+.planner-entry p { color:var(--text-dim); white-space:pre-wrap; line-height:1.6; font-size:12px; margin:8px 0 0; }
+.planner-entry small { display:block; color:var(--text-muted); font-size:11px; margin-top:7px; }
+.planner-root details { margin-top:18px; }
+.planner-root summary { cursor:pointer; color:var(--blue); font-size:13px; padding:8px 0; }
+.planner-root [hidden] { display:none !important; }
+.planner-root button:focus-visible, .planner-root input:focus-visible, .planner-root textarea:focus-visible, .planner-root summary:focus-visible { outline:2px solid var(--gold); outline-offset:3px; }
+@media(max-width:700px) { #subtab-game-planner { padding:24px 16px; } .planner-fields { grid-template-columns:1fr; } .planner-import,.planner-card { padding:16px; } }
 
 .placeholder-panel {
   max-width: 700px;
@@ -2813,6 +2846,7 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
       <button class="subtab" data-subtab="gallery" onclick="switchSubtab('gallery')">
         Build Gallery<span class="phase-tag">P3</span>
       </button>
+      <button class="subtab" data-subtab="game-planner" onclick="switchSubtab('game-planner')">Game Planner</button>
       <button class="subtab" data-subtab="scanner" onclick="switchSubtab('scanner')">
         S-Rank Scanner<span class="phase-tag">P4</span>
       </button>
@@ -2846,6 +2880,49 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
           <span class="pob-status" id="pob-status"></span>
         </div>
         <div id="pob-summary-host"></div>
+      </div>
+    </div>
+
+    <div class="subtab-content" id="subtab-game-planner">
+      <div class="planner-root">
+        <h1 class="planner-heading">Your build, in the game</h1>
+        <p class="planner-blurb">Import a <strong>.build</strong> guide or turn your current PoB2 build into a guide for the in-game planner.
+          Review passives, skills, and equipment notes here. Your Optimizer character stays saved separately.</p>
+        <div class="planner-import">
+          <label class="planner-field" for="planner-file">Open a .build guide</label>
+          <div class="planner-actions">
+            <input id="planner-file" type="file" accept=".build,.json,application/json" onchange="importPlannerFile(this)">
+            <button type="button" class="pob-btn gold" id="planner-from-pob" onclick="createPlannerFromCurrent()">Use current PoB2 build</button>
+          </div>
+          <p class="planner-help" id="planner-current-label">Load a character through PoB2 Decoder to create a guide.</p>
+          <details><summary>Paste guide JSON</summary>
+            <label class="planner-field" for="planner-paste">Contents of a .build file</label>
+            <textarea class="planner-json" id="planner-paste" spellcheck="false" placeholder='{"name": "My guide", "skills": [], "passives": []}'></textarea>
+            <div class="planner-actions"><button type="button" class="pob-btn primary" onclick="importPlannerText()">Import guide</button></div>
+          </details>
+        </div>
+        <p class="planner-status" id="planner-status" role="status" aria-live="polite"></p>
+        <section class="planner-card" id="planner-workspace" hidden aria-label="Guide workspace">
+          <div class="planner-fields">
+            <label class="planner-field">Guide name<input id="planner-name" maxlength="200" oninput="editPlannerMetadata('name',this.value)"></label>
+            <label class="planner-field">Author (optional)<input id="planner-author" maxlength="200" oninput="editPlannerMetadata('author',this.value)"></label>
+            <label class="planner-field wide">Guide notes<textarea id="planner-description" maxlength="32768" oninput="editPlannerMetadata('description',this.value)"></textarea></label>
+          </div>
+          <div class="planner-counts" id="planner-counts"></div>
+          <div class="planner-report" id="planner-report"></div>
+          <label class="planner-help" id="planner-partial-wrap" hidden><input id="planner-partial" type="checkbox" onchange="updatePlannerDownload()"> Download a partial guide with the listed omissions recorded in its notes.</label>
+          <div class="planner-actions"><button type="button" class="pob-btn primary" id="planner-download" onclick="downloadPlannerGuide()" disabled>Download .build</button></div>
+          <p class="planner-help">Save the downloaded file in <strong>Documents → My Games → Path of Exile 2 → BuildPlanner</strong> (your Documents folder may be inside OneDrive).
+            The game watches that folder. This is a guide: it does not equip items, import rolled gear, or calculate DPS.
+            <a href="https://www.pathofexile.com/developer/docs/game" target="_blank" rel="noopener noreferrer">GGG’s planner instructions ↗</a></p>
+          <div id="planner-preview"></div>
+          <details><summary>Edit full guide JSON</summary>
+            <p class="planner-help">Progression ranges, weapon sets, support links, slot coordinates, and extra fields are preserved. Apply changes before downloading.</p>
+            <label class="planner-field" for="planner-json">Guide JSON</label>
+            <textarea class="planner-json" id="planner-json" spellcheck="false" oninput="plannerJsonChanged()"></textarea>
+            <div class="planner-actions"><button type="button" class="pob-btn ghost" onclick="applyPlannerJson()">Apply JSON changes</button></div>
+          </details>
+        </section>
       </div>
     </div>
 
@@ -3039,7 +3116,7 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
     <div class="export-actions">
       <button class="export-btn primary" id="export-copy-btn" onclick="copyExportCode()" disabled>📋 Copy code</button>
       <button class="export-btn ghost" id="export-download-btn" onclick="downloadExportXml()" disabled>⬇ Download XML</button>
-      <button class="export-btn ghost tracker" title="In-game tracker code format pending GGG spec (Phase 6.2 — locked until they publish)" disabled>In-game tracker (TBD)</button>
+      <button class="export-btn ghost" onclick="closeExportModal();switchTab('theorycraft');switchSubtab('game-planner')">Game Planner (.build)</button>
       <div style="flex:1"></div>
       <button class="export-btn ghost" onclick="closeExportModal()">Done</button>
     </div>
@@ -3142,6 +3219,7 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
 
 <div class="toast" id="toast"></div>
 
+<script src="poe2forge-planner.js"></script>
 <script>
 // ═════════════════════════════════════════════════════════════════════════
 // POE2 FORGE v16 — PoB2 BRIDGE (Phases 1–7C preserved)
@@ -3184,6 +3262,7 @@ function setCurrentBuild(build) {
   renderItemDetailEmpty();
   // Keep the scanner's "current build" status fresh if it's been visited
   if (typeof updateScannerCurrentStatus === 'function') updateScannerCurrentStatus();
+  if (typeof refreshPlannerCurrentLabel === 'function') refreshPlannerCurrentLabel();
 }
 
 function loadStoredBuild() {
@@ -3413,6 +3492,7 @@ function switchSubtab(sub) {
   if (sub === 'alt-quality') {
     renderAltQuality();
   }
+  if (sub === 'game-planner') refreshPlannerCurrentLabel();
 }
 
 // ── SETUP CHECKLIST ─────────────────────────────────────────────────────
@@ -6223,6 +6303,192 @@ function renderScannerResultCard(rule) {
   `;
 }
 
+// ── GAME PLANNER WORKSPACE ──────────────────────────────────────────────
+const PLANNER_STORAGE_KEY = 'forge:plannerGuide';
+let plannerGuide = null, plannerReport = {omissions:[], notes:[]}, plannerRequest = 0;
+let plannerJsonDirty = false, plannerCatalog = null, plannerCatalogPromise = null;
+const plannerElement = id => document.getElementById('planner-'+id);
+function plannerStatus(message, error = false) {
+  plannerElement('status').textContent = message;
+  plannerElement('status').classList.toggle('error',error);
+}
+function refreshPlannerCurrentLabel() {
+  const c = currentBuild?.character;
+  plannerElement('from-pob').disabled = !currentBuild?.originalPobCode;
+  plannerElement('current-label').textContent = c
+    ? `Current character: ${c.name || c.class || 'PoB2 build'} · Level ${c.level || '?'} · ${c.ascendancy || c.class || ''}. Equipment edits will be included as reference notes.`
+    : 'Load a character through PoB2 Decoder to create a guide.';
+}
+async function loadPlannerCatalog() {
+  if (plannerCatalog) return plannerCatalog;
+  if (!plannerCatalogPromise) plannerCatalogPromise = (async()=>{
+    const response = await fetch('poe2forge-planner-data.json');
+    if (!response.ok) throw new Error('Planner ID map could not be loaded. Please reload and try again.');
+    const data = await response.json();
+    if (!data.nodes || !data.gems || !Array.isArray(data.classes) || !Array.isArray(data.pobTreeVersions)) throw new Error('Planner ID map is incomplete.');
+    plannerCatalog = data;
+    return data;
+  })().catch(error=>{plannerCatalogPromise=null;throw error;});
+  return plannerCatalogPromise;
+}
+function storePlannerGuide() {
+  try {
+    ForgePlanner.validate(plannerGuide);
+    localStorage.setItem(PLANNER_STORAGE_KEY,JSON.stringify({build:plannerGuide, report:plannerReport}));
+    return true;
+  } catch(error) {
+    plannerStatus(`Guide is open but could not be saved in this browser: ${error.message}`,true);
+    return false;
+  }
+}
+function acceptPlannerGuide(build, report = {omissions:[], notes:[], source:'Imported .build'}) {
+  ForgePlanner.validate(build);
+  plannerGuide = build;
+  plannerReport = report;
+  plannerJsonDirty = false;
+  plannerElement('partial').checked = false;
+  renderPlannerGuide();
+  if (storePlannerGuide()) plannerStatus('Guide loaded and saved in this browser. Review it below before downloading.');
+  // Display names are optional; file import/export also works without the catalog.
+  loadPlannerCatalog().then(()=>renderPlannerPreview()).catch(()=>{});
+}
+async function importPlannerFile(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const request = ++plannerRequest;
+  try {
+    if (file.size > ForgePlanner.MAX_BYTES) throw new Error('Choose a file smaller than 1 MB.');
+    const raw = await file.text();
+    if (request !== plannerRequest) return;
+    acceptPlannerGuide(ForgePlanner.parse(raw).build);
+  } catch(error) { if (request === plannerRequest) plannerStatus(error.message,true); }
+  finally { input.value = ''; }
+}
+function importPlannerText() {
+  ++plannerRequest;
+  try { acceptPlannerGuide(ForgePlanner.parse(plannerElement('paste').value).build); }
+  catch(error) { plannerStatus(error.message,true); }
+}
+async function createPlannerFromCurrent() {
+  const request = ++plannerRequest;
+  const original = JSON.stringify(currentBuild);
+  if (!currentBuild?.originalPobCode) { plannerStatus('Import a PoB2 character first.',true); return; }
+  const snapshot = JSON.parse(original);
+  plannerStatus('Preparing your guide from the selected PoB2 equipment, skills, and passive tree…');
+  try {
+    // Reuse the verified full-build export path, including equipment edits.
+    const exported = await encodePobCode(snapshot);
+    const xml = exported.xml || await decodePobCode(exported.code);
+    const catalog = await loadPlannerCatalog();
+    if (request !== plannerRequest) return;
+    if (JSON.stringify(currentBuild) !== original) throw new Error('Your character changed while preparing the guide. Choose Use current PoB2 build again.');
+    const c = snapshot.character;
+    const name = `${c?.name && c.name !== 'PoB Build' ? c.name : c?.ascendancy || c?.class || 'PoB2'} — Level ${c?.level || '?'} guide`;
+    const result = ForgePlanner.fromPob(xml,catalog,parsePobItemText,name);
+    acceptPlannerGuide(result.build,{omissions:result.omissions,notes:result.notes,source:result.source});
+    if (result.omissions.length) plannerStatus('Guide prepared. Review the omitted entries below before choosing a partial download.');
+  } catch(error) { if (request === plannerRequest) plannerStatus(error.message,true); }
+}
+function plannerJsonChanged() {
+  ++plannerRequest;
+  plannerJsonDirty = true;
+  for (const key of ['name','author','description']) plannerElement(key).disabled = true;
+  updatePlannerDownload();
+  plannerStatus('JSON changes are pending. Apply them to update the preview and enable downloading.');
+}
+function applyPlannerJson() {
+  ++plannerRequest;
+  try {
+    const parsed = ForgePlanner.parse(plannerElement('json').value);
+    acceptPlannerGuide(parsed.build,plannerReport);
+  } catch(error) { plannerStatus(error.message,true); }
+}
+function editPlannerMetadata(key, value) {
+  if (!plannerGuide || plannerJsonDirty) return;
+  ++plannerRequest;
+  plannerGuide[key] = value;
+  plannerElement('json').value = JSON.stringify(plannerGuide,null,2);
+  updatePlannerDownload();
+  try {
+    ForgePlanner.validate(plannerGuide);
+    if (storePlannerGuide()) plannerStatus('Guide changes saved in this browser.');
+  } catch(error) { plannerStatus(error.message,true); }
+}
+function updatePlannerDownload() {
+  let valid = !!plannerGuide && !plannerJsonDirty;
+  try { if (valid) ForgePlanner.validate(plannerGuide); } catch { valid = false; }
+  plannerElement('download').disabled = !valid || (!!plannerReport.omissions.length && !plannerElement('partial').checked);
+}
+function renderPlannerGuide() {
+  plannerElement('workspace').hidden = !plannerGuide;
+  if (!plannerGuide) return;
+  for (const key of ['name','author','description']) {
+    plannerElement(key).value = plannerGuide[key] || '';
+    plannerElement(key).disabled = false;
+  }
+  plannerElement('json').value = JSON.stringify(plannerGuide,null,2);
+  plannerElement('counts').innerHTML = `<span>${plannerGuide.passives?.length || 0} PASSIVE ENTRIES</span><span>${plannerGuide.skills?.length || 0} SKILL ENTRIES</span><span>${plannerGuide.inventory_slots?.length || 0} GEAR HINTS</span>`;
+  const warnings = ForgePlanner.validate(plannerGuide);
+  const messages = [...plannerReport.omissions,...plannerReport.notes,...warnings];
+  plannerElement('report').innerHTML = `<strong>${escHtml(plannerReport.source || 'Imported .build')}</strong><br>File structure checked. Acceptance inside the game still needs a live check.
+    ${plannerReport.omissions.length ? `<p><strong>${plannerReport.omissions.length} omission(s): this is a partial guide.</strong></p>` : ''}
+    ${messages.length ? `<ul>${messages.slice(0,100).map(m=>`<li>${escHtml(m)}</li>`).join('')}</ul>${messages.length > 100 ? '<p>More entries are recorded in the download notes.</p>' : ''}` : ''}`;
+  plannerElement('partial-wrap').hidden = !plannerReport.omissions.length;
+  renderPlannerPreview();
+  updatePlannerDownload();
+}
+function renderPlannerPreview() {
+  if (!plannerGuide) return;
+  const entry = v => typeof v === 'string' ? {id:v} : v;
+  const interval = v => v === undefined ? 'All levels' : Array.isArray(v) ? `Levels ${v[0]}–${v[1]}` : `Level ${v}`;
+  const nodeNames = new Map(Object.values(plannerCatalog?.nodes || {}).map(n=>[n[0],n[1]]));
+  const gemNames = new Map(Object.entries(plannerCatalog?.gems || {}).flatMap(([key,v])=>[[key,v.name],[v.id,v.name]]));
+  const slotNames = {Weapon1:'Weapon · Set 1',Offhand1:'Offhand · Set 1',Weapon2:'Weapon · Set 2',Offhand2:'Offhand · Set 2',Helm1:'Helmet',BodyArmour1:'Body armour',Gloves1:'Gloves',Boots1:'Boots',Amulet1:'Amulet',Belt1:'Belt',Ring1:'Left ring',Ring2:'Right ring'};
+  const isBeltHint = v => v.inventory_id === 'Flask1' && (v.slot_y ?? 0) === 0 && Number.isInteger(v.slot_x ?? 0) && (v.slot_x ?? 0) >= 0 && (v.slot_x ?? 0) <= 4;
+  const beltLabels = ['Life flask','Mana flask','Charm 1','Charm 2','Charm 3'];
+  const inventory = plannerGuide.inventory_slots || [];
+  const gearHints = inventory.filter(v=>!isBeltHint(v)), beltHints = inventory.filter(isBeltHint);
+  const metadata = v => `${interval(v.level_interval)}${v.weapon_set !== undefined ? ' · Weapon set '+v.weapon_set : ''}${!isBeltHint(v) && (v.slot_x !== undefined || v.slot_y !== undefined) ? ` · Slot ${v.slot_x || 0}, ${v.slot_y || 0}` : ''}`;
+  function card(v,label,extra='') { return `<article class="planner-entry"><strong>${escHtml(label)}</strong><small>${escHtml(metadata(v))}</small>${v.additional_text ? `<p>${escHtml(v.additional_text)}</p>` : ''}${extra}</article>`; }
+  const skills = (plannerGuide.skills || []).map(entry);
+  const passiveEntries = (plannerGuide.passives || []).map(entry);
+  plannerElement('preview').innerHTML = `<h3>Skills and supports</h3><div class="planner-entries">${skills.map(s=>card(s,gemNames.get(s.id) || s.id,(s.support_skills || []).length ? `<p>Supports:</p>${s.support_skills.map(entry).map(s=>`<p>${escHtml(gemNames.get(s.id) || s.id)} · ${escHtml(metadata(s))}${s.additional_text ? '<br>'+escHtml(s.additional_text) : ''}</p>`).join('')}` : '')).join('') || '<p class="planner-help">No skill recommendations in this guide.</p>'}</div>
+    <h3>Equipment notes</h3><div class="planner-entries">${gearHints.map(s=>card(s,(Object.hasOwn(slotNames,s.inventory_id) ? slotNames[s.inventory_id] : s.inventory_id)+(s.unique_name ? ' · '+s.unique_name : ''))).join('') || '<p class="planner-help">No equipment hints in this guide.</p>'}</div>
+    ${beltHints.length ? `<h3>Flasks and charms</h3><p class="planner-help">Reference details from PoB2. Recovery, duration, charges, and other values are included when present in the source; Forge does not calculate missing values.</p><div class="planner-entries" id="planner-belt-preview">${beltHints.map(s=>card(s,beltLabels[s.slot_x ?? 0]+(s.unique_name ? ' · '+s.unique_name : ''))).join('')}</div>` : ''}
+    <details><summary>Passive allocations (${passiveEntries.length})</summary><div class="planner-entries">${passiveEntries.map(p=>card(p,nodeNames.get(p.id) || p.id,`<small>${escHtml(p.id)}</small>`)).join('')}</div></details>`;
+}
+function downloadPlannerGuide() {
+  updatePlannerDownload();
+  if (plannerElement('download').disabled) return;
+  try {
+    const build = JSON.parse(JSON.stringify(plannerGuide));
+    if (plannerReport.omissions.length) {
+      build.name += ' (partial)';
+      build.description = [build.description,'Partial guide — not translated:',...plannerReport.omissions].filter(Boolean).join('\n');
+    }
+    const content = ForgePlanner.serialize(build);
+    const url = URL.createObjectURL(new Blob([content],{type:'application/json;charset=utf-8'}));
+    const a = document.createElement('a');
+    a.href = url; a.download = ForgePlanner.filename(build.name);
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    plannerStatus('Guide downloaded. Place it in the game’s BuildPlanner folder, then check its passives, skills, and equipment notes in-game.');
+  } catch(error) { plannerStatus(error.message,true); }
+}
+function loadStoredPlanner() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PLANNER_STORAGE_KEY) || 'null');
+    if (saved?.build) {
+      plannerGuide = ForgePlanner.parse(JSON.stringify(saved.build)).build;
+      const report = saved.report || {};
+      plannerReport = {source:typeof report.source==='string'?report.source:'Saved guide',omissions:Array.isArray(report.omissions)?report.omissions.filter(v=>typeof v==='string'):[],notes:Array.isArray(report.notes)?report.notes.filter(v=>typeof v==='string'):[]};
+      renderPlannerGuide();
+      loadPlannerCatalog().then(()=>renderPlannerPreview()).catch(()=>{});
+    }
+  } catch { plannerGuide=null; plannerStatus('The saved guide could not be restored. Import its .build file again.',true); }
+  refreshPlannerCurrentLabel();
+}
+
 // ── TOAST ───────────────────────────────────────────────────────────────
 function toast(msg, type = 'info') {
   const el = document.getElementById('toast');
@@ -6236,6 +6502,7 @@ function toast(msg, type = 'info') {
 function init() {
   // Restore prior build (if any) from localStorage
   loadStoredBuild();
+  loadStoredPlanner();
   renderBuildBadge();
 
   // Kick off PoE2DB data load (best-effort, non-blocking). When it resolves

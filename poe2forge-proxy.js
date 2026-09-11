@@ -314,13 +314,15 @@ function handlePob2Launch(res) {
 
 // ── STATIC FILE SERVER ───────────────────────────────────────────────────────
 // Serves the app at http://localhost:3001/ — no second server needed.
-// Exact-filename allowlist: these six files are the app's entire public
+// Exact-filename allowlist: these files are the app's public
 // surface. Anything else (dotfiles, .env, the server source, git internals,
 // traversal attempts) is refused regardless of its extension.
 const STATIC_FILES = {
   'index.html':                 'text/html; charset=utf-8',
   'POE2Forge_v17.html':         'text/html; charset=utf-8',
   'poe2forge-gallery-codes.js': 'application/javascript; charset=utf-8',
+  'poe2forge-planner.js':       'application/javascript; charset=utf-8',
+  'poe2forge-planner-data.json':'application/json; charset=utf-8',
   'poe2db-base-types.json':     'application/json; charset=utf-8',
   'poe2db-skills.json':         'application/json; charset=utf-8',
   'poe2db-uniques.json':        'application/json; charset=utf-8',
