@@ -83,5 +83,10 @@
     "icon": "icons/HandOfWisdomAndAction.webp",
     "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Armours/Gloves/Uniques/HandOfWisdomAndAction.webp",
     "page": "https://poe2db.tw/us/Hand_of_Wisdom_and_Action"
+  },
+  "Meginord's Girdle": {
+    "icon": "icons/MeginordsGirdle.webp",
+    "cdnIcon": "https://cdn.poe2db.tw/image/Art/2DItems/Belts/Uniques/MeginordsGirdle.webp",
+    "page": "https://poe2db.tw/us/Meginords_Girdle"
   }
 }
