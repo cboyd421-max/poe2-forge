@@ -30,7 +30,8 @@ OAuth registration status unverified; direct character import unavailable. Use t
 - **Theorycraft → Build Gallery** — curated league-ready builds plus your own saved entries via `localStorage`
 - **Theorycraft → S-Rank Scanner** — pattern-matches builds for the "downside text negated by ascendancy keystone" pattern; scan your current build or pick a class + ascendancy + skill + item combo manually
 - **Theorycraft → Advanced Thaumaturgy** — searchable alt-quality skill reference (data from PoE2DB via the bundled scraper)
-- **Export Build** — returns the complete original PoB2 code for an unchanged imported build, including after a reload. Exporting edited builds is not supported yet.
+- **Export Build** — returns the exact original code for an unchanged PoB2 import. Equipment edits patch the complete original document and update only the selected equipment set; other sets, skills, passive trees, jewels, flasks, charms, and unmapped data are retained. Skill/tree edits still cannot be exported.
+- **Candidate equipment** — paste complete text from PoB2's item editor into a Forge gear slot, or adjust the imported item's modifiers. Save, reload, export, and save a candidate to your local gallery without buying or equipping anything in-game.
 - **Gear Editor / Skill Editor / Tree paste-import** — edit any slot, gem group, or the passive-tree URL in place
 - **PoB2 Bridge** — "Connect via PoB2" launches PoB2 (GGG-approved OAuth), walks you through its import flow, then ingests the resulting code via clipboard
 
@@ -84,9 +85,17 @@ No GGG credentials go in `.env`. If you're upgrading from v2.x, delete `POESESSI
 
 **Theorycraft.** The S-Rank Scanner pattern-matches for downside-negation interactions (Last Lament + Lich Eternal Life being the canonical case). The Advanced Thaumaturgy reference surfaces alt-quality effects that delete a downside — Gemling fuel.
 
-**Edit and export.** Toggle EDIT MODE on the paperdoll to modify gear; Edit Skills / Edit Passive Tree from the left panel. Edits are saved in Forge, but edited-build export is not supported yet. An unchanged PoB2 import can be exported with its original code.
+**Try a gear change.** Import a PoB2 build, toggle EDIT MODE on the paperdoll, and click a slot. Adjust the current item's modifiers, or paste complete item text from PoB2's item editor and click **Load item text** to replace it. A replacement retains its own quality, sockets, and other properties. Click **Save**, then **Export Build (PoB2)**. Import that code into a new PoB2 build to calculate and compare it with the original. No purchase or in-game equipment change is needed. Codes, XML downloads, and local gallery entries include the supported gear edits, including after reloading Forge.
+
+Changing base type, rarity, or sockets requires complete replacement item text; Forge does not guess missing item properties. Paste PoB2 item text containing `Rarity:` and `Implicits:`, not a trade URL or a build code. Item legality and current damage calculations remain PoB2's responsibility. Forge shows imported numbers as needing recalculation after edits, and omits obsolete calculated numbers from edited exports.
+
+The bottom equipment panel's **Export to PoB2** button opens the export window. Items containing PoB2's legacy modifier-roll metadata support numeric edits while preserving that metadata. Changing the modifier list's structure on those items requires complete replacement item text so roll selections cannot be applied to the wrong modifier.
+
+Skill and passive-tree edits remain saved in Forge but cannot yet be exported. Mixed gear/skill/tree edits fail with an explanation instead of silently exporting only part of the work. The original imported code remains stored with the build.
 
 ## Troubleshooting
+
+**Testing this equipment-export change.** `tests/pob-export.cjs` uses Playwright with an isolated browser and local synthetic fixtures. Install Playwright as a development tool or put an existing installation on `NODE_PATH`, install its Chromium browser, then run `node tests/pob-export.cjs`. Set `FORGE_TEST_BROWSER` to an existing Chromium/Edge executable to use it instead. No additional runtime dependency is used by Forge. The suite covers active/inactive equipment sets, source preservation, reloads, the actual slot editor, gallery saves, export races, invalid inputs, and XML downloads. A native PoB2 import remains a separate compatibility check.
 
 **PoB2 rejects a Forge export / original code missing.** Older versions forgot the original PoB2 code on reload and generated incomplete XML with an unsupported tree version. Import the original PoB2 code again through Theorycraft → PoB2 Decoder and send it to Optimizer. Forge now stores that code with the build. The export's format check confirms decoding only; it is not a live test inside PoB2.
 

@@ -1350,7 +1350,15 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
   border: 1px solid rgba(255,140,32,0.4);
   background: rgba(255,140,32,0.08);
   text-transform: uppercase;
-  cursor: help;
+  cursor: pointer;
+}
+.stats-stale-pill:hover {
+  background: rgba(255,140,32,0.18);
+  border-color: var(--orange);
+}
+.stats-stale-pill:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 3px;
 }
 
 /* ── SLOT EDITOR MODAL (Phase 7A) — reuses export-overlay/modal skeleton ── */
@@ -3153,6 +3161,11 @@ const STORAGE_KEYS = {
 let currentBuild = null;
 
 function setCurrentBuild(build) {
+  // A pending export or displayed code must not outlive an edit/import.
+  exportRequestId++;
+  lastExportedCode = null;
+  lastExportedXml = null;
+  setExportActionsEnabled(false);
   currentBuild = build;
   if (build) {
     try { localStorage.setItem(STORAGE_KEYS.build, JSON.stringify(build)); } catch(e) {}
@@ -3505,7 +3518,9 @@ function renderOptimizerLeftPanel() {
       <div class="kv-row"><span class="kv-label">Mana</span><span class="kv-val">${fmtStat(s.mana)}</span></div>
       <div class="kv-row"><span class="kv-label">Armour</span><span class="kv-val ${armourCls}">${fmtStat(s.armour)}</span></div>
       <div class="kv-row"><span class="kv-label">Evasion</span><span class="kv-val">${fmtStat(s.evasion)}</span></div>
-      <div style="font-size:10px;color:var(--text-muted);padding:6px 0 0;font-style:italic">Stats derived from gear mods · full calc lands in Phase 8</div>
+      <div style="font-size:10px;color:var(--text-muted);padding:6px 0 0;font-style:italic">${currentBuild.editedSinceImport || currentBuild.needsCalculation
+        ? 'Export to PoB2 to calculate this version. Any numbers shown belong to the original import.'
+        : 'Stats from the imported build. PoB2 calculates changes.'}</div>
     </div>
     <div class="section">
       <div class="section-title">Resistances</div>
@@ -3688,8 +3703,8 @@ function renderPaperdollView(container) {
   const charm2 = charms[1];
   const charm3 = charms[2];
 
-  const stalePill = currentBuild.editedSinceImport
-    ? `<span class="stats-stale-pill" title="Stats below were computed by PoB2 against the imported build. Phase 8 calc engine will recompute these.">STATS STALE</span>`
+  const stalePill = currentBuild.editedSinceImport || currentBuild.needsCalculation
+    ? `<button type="button" class="stats-stale-pill" onclick="openExportModal()" title="Open the export window, then import this version into PoB2 to calculate its stats.">EXPORT TO POB2</button>`
     : '';
   container.innerHTML = `
     <div class="center-content" id="paperdoll-view">
@@ -4294,7 +4309,7 @@ function parsePobItemText(body) {
   if (nameLines.length) {
     // Last name-block line is the typeLine (base type). For unique/rare items
     // there's usually a custom name above it.
-    if (nameLines.length === 1) {
+    if (nameLines.length === 1 || ['normal', 'magic'].includes(it.rarity)) {
       it.typeLine = nameLines[0]; it.name = nameLines[0];
     } else {
       it.name = nameLines[0];
@@ -4362,10 +4377,10 @@ function mapPobToBuild(parsed, originalCode = null) {
     mana:    Math.round(ps.Mana ?? 0) || null,
     armour:  Math.round(ps.Armour ?? 0) || null,
     evasion: Math.round(ps.Evasion ?? 0) || null,
-    fireRes:  Math.round(ps.FireResist ?? 0),
-    coldRes:  Math.round(ps.ColdResist ?? 0),
-    lightRes: Math.round(ps.LightningResist ?? 0),
-    chaosRes: Math.round(ps.ChaosResist ?? 0),
+    fireRes:  ps.FireResist == null ? null : Math.round(ps.FireResist),
+    coldRes:  ps.ColdResist == null ? null : Math.round(ps.ColdResist),
+    lightRes: ps.LightningResist == null ? null : Math.round(ps.LightningResist),
+    chaosRes: ps.ChaosResist == null ? null : Math.round(ps.ChaosResist),
     str: Math.round(ps.Str ?? 0) || null,
     dex: Math.round(ps.Dex ?? 0) || null,
     int: Math.round(ps.Int ?? 0) || null,
@@ -4405,6 +4420,7 @@ function mapPobToBuild(parsed, originalCode = null) {
       league: '',
     },
     stats,
+    needsCalculation: Object.keys(ps).length === 0,
     gear,
     skills,
     tree: {
@@ -4483,25 +4499,169 @@ function renderPobSummary(parsed, build) {
   `;
 }
 
-// PoB2 export preserves the complete source for an unchanged imported build.
-// The source is stored on the build itself, so reloads and unrelated decoder
-// previews cannot replace it. Forge's reduced schema cannot recreate PoB2 XML.
-function getOriginalPobCode(build) {
-  if (!build || build.source !== 'pob2' || build.editedSinceImport) return null;
-  return typeof build.originalPobCode === 'string' && build.originalPobCode.trim()
-    ? build.originalPobCode.trim() : null;
-}
-
+// Keep unchanged exports byte-for-byte. For gear edits, patch the complete
+// imported document; never reconstruct a build from Forge's display model.
 async function encodePobCode(build) {
   if (!build) throw new Error('No build to export');
-  if (build.editedSinceImport) {
-    throw new Error('Exporting edited builds is not supported yet. Your edits remain saved in Forge. To export an unchanged build, open it from PoB2 or the gallery.');
-  }
-  const code = getOriginalPobCode(build);
+  const code = build.source === 'pob2' && build.originalPobCode?.trim();
   if (!code) {
     throw new Error('This saved build is missing its original PoB2 code. Import the original code once through Theorycraft → PoB2 Decoder, then send it to Optimizer. Future reloads will keep the complete export.');
   }
-  return { code, mode: 'roundtrip', xml: null };
+  if (!build.editedSinceImport) return { code, mode: 'roundtrip', xml: null };
+  const originalXml = await decodePobCode(code);
+  const result = patchPobGear(originalXml, build);
+  if (!result.changedSlots.length) return { code, mode: 'roundtrip', xml: null };
+  const stream = new Blob([result.xml]).stream().pipeThrough(new CompressionStream('deflate'));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return { ...result, code: btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), mode: 'gear-edited' };
+}
+
+function pobGearFields(item) {
+  if (!item) return null;
+  return {
+    rarity: item.rarity || 'normal', name: item.name || '', typeLine: item.typeLine || '',
+    ilvl: item.ilvl ?? null, implicits: item.implicits || [], mods: item.mods || [], sockets: item.sockets || [],
+  };
+}
+
+function splitEditablePobItemText(text) {
+  const lines = String(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const rarity = lines[0]?.match(/^Rarity:\s*(NORMAL|MAGIC|RARE|UNIQUE|RELIC)$/i)?.[1].toLowerCase();
+  const nameCount = ['rare', 'unique', 'relic'].includes(rarity) ? 2 : 1;
+  const implicitIndex = lines.findIndex(line => /^Implicits:\s*\d+$/i.test(line));
+  if (!rarity || implicitIndex < 1 + nameCount || lines.slice(1, 1 + nameCount).some(line => line.includes(':'))) {
+    throw new Error('Paste complete item text copied from the PoB2 item editor, including Rarity and Implicits. A build code or trade link is not item text.');
+  }
+  const implicitCount = Number(lines[implicitIndex].split(':')[1]);
+  if (implicitCount > lines.length - implicitIndex - 1) throw new Error('The item text is missing implicit modifiers. Copy the complete item from PoB2.');
+  return { lines, rarity, nameCount, implicitIndex, implicitCount };
+}
+
+function patchPobItemText(raw, item) {
+  const part = splitEditablePobItemText(raw);
+  const before = parsePobItemText(raw);
+  if (part.nameCount === 1 && item.name !== before.name) {
+    throw new Error('Normal and magic items use their base name. Paste complete replacement item text to change it.');
+  }
+  if (item.typeLine !== before.typeLine || item.rarity !== before.rarity) {
+    throw new Error('To replace the base type or rarity, use Paste PoB2 item text. This keeps the replacement item’s quality, sockets, and other properties together.');
+  }
+  if (JSON.stringify(item.sockets || []) !== JSON.stringify(before.sockets ? before.sockets.split(/[\s-]+/) : [])) {
+    throw new Error('To change sockets, paste the complete replacement item from PoB2.');
+  }
+  const implicits = item.implicits || [];
+  const mods = item.mods || [];
+  if (implicits.some((mod, i) => mods[i] !== mod)) throw new Error('Item modifiers are inconsistent. Reopen and save this item before exporting.');
+  const explicits = mods.slice(implicits.length);
+  for (const line of [item.name || '', item.typeLine, ...implicits, ...explicits]) {
+    if (typeof line !== 'string' || /[\r\n\x00-\x1f]/.test(line)) throw new Error('Each name or modifier must occupy one line.');
+  }
+  if ([...implicits, ...explicits].some(line => /^(Rarity|Item Level|Implicits|Quality|Sockets|LevelReq|Variant):/i.test(line))) {
+    throw new Error('Item properties must not be entered as modifiers. Paste complete replacement item text to change those properties.');
+  }
+  if (item.ilvl != null && (!Number.isInteger(item.ilvl) || item.ilvl < 1 || item.ilvl > 100)) throw new Error('Item level must be between 1 and 100.');
+  // Keep original headers (quality, rune settings, variants, etc.) and raw
+  // unmodified mod lines, including markup which the display parser cleans.
+  const header = part.lines.slice(1 + part.nameCount, part.implicitIndex);
+  if (item.ilvl !== before.ilvl) {
+    const index = header.findIndex(line => /^Item Level:/i.test(line));
+    if (index >= 0) header.splice(index, 1);
+    if (item.ilvl != null) header.push('Item Level: ' + item.ilvl);
+  }
+  const preserveLines = (wanted, original) => {
+    const available = original.slice();
+    return wanted.map(line => {
+      const index = available.findIndex(rawLine => cleanModText(rawLine) === line);
+      return index < 0 ? line : available.splice(index, 1)[0];
+    });
+  };
+  const originalMods = part.lines.slice(part.implicitIndex + 1);
+  const names = part.nameCount === 2 ? [item.name || item.typeLine, item.typeLine] : [item.typeLine];
+  return [part.lines[0], ...names, ...header, 'Implicits: ' + implicits.length,
+    ...preserveLines(implicits, originalMods.slice(0, part.implicitCount)),
+    ...preserveLines(explicits, originalMods.slice(part.implicitCount))].join('\n');
+}
+
+function patchPobGear(originalXml, build) {
+  const baseline = mapPobToBuild(parsePobXml(originalXml));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  for (const key of ['skills', 'tree', 'flasks', 'charms']) {
+    if (!same(Object.hasOwn(build, key) ? build[key] : baseline[key], baseline[key])) {
+      throw new Error('This export supports equipment edits only. Your ' + key + ' also changed. Keep those edits in Forge, or import the original build again to try a gear-only change.');
+    }
+  }
+  for (const key of ['class', 'ascendancy', 'level']) {
+    if (build.character?.[key] !== baseline.character[key]) throw new Error('Character changes cannot be exported yet. Use an imported PoB2 character for equipment edits.');
+  }
+  const slotNames = Object.entries(POB_SLOT_TO_KEY).filter(([, key]) => key);
+  if (Object.keys(build.gear || {}).some(key => !slotNames.some(([, known]) => key === known))) throw new Error('This build contains an unsupported equipment slot.');
+  const changedSlots = slotNames.filter(([, key]) => !same(pobGearFields(build.gear?.[key]), pobGearFields(baseline.gear[key])) ||
+    (build.gear?.[key]?.pobItemText && build.gear[key].pobItemText !== baseline.gear[key]?.pobItemText));
+  if (!changedSlots.length) return { xml: originalXml, changedSlots: [] };
+  const doc = new DOMParser().parseFromString(originalXml, 'text/xml');
+  if (doc.documentElement.tagName !== 'PathOfBuilding2') throw new Error('Equipment export requires a Path of Building 2 build.');
+  const items = doc.documentElement.querySelector(':scope > Items');
+  if (!items) throw new Error('The original build has no equipment section. Import a complete PoB2 build.');
+  const sets = [...items.querySelectorAll(':scope > ItemSet')];
+  const activeId = items.getAttribute('activeItemSet') || '1';
+  const active = sets.length ? sets.find(set => set.getAttribute('id') === activeId) : items;
+  if (!active) throw new Error('The active PoB2 equipment set could not be identified. Select a set in PoB2 and export it again.');
+  const originalItems = [...items.querySelectorAll(':scope > Item')];
+  const ids = originalItems.map(item => item.getAttribute('id'));
+  if (ids.some(id => !/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) > Number.MAX_SAFE_INTEGER - 20) ||
+      new Set(ids.map(Number)).size !== ids.length) throw new Error('The original equipment contains invalid or duplicate item IDs.');
+  let nextId = Math.max(0, ...ids.map(Number)) + 1;
+  for (const [slotName, key] of changedSlots) {
+    const matches = [...active.querySelectorAll(':scope > Slot')].filter(slot => slot.getAttribute('name') === slotName);
+    if (matches.length > 1) throw new Error('The original build has duplicate bindings for ' + slotName + '.');
+    let slot = matches[0];
+    const oldId = slot?.getAttribute('itemId');
+    const originalItem = originalItems.find(item => item.getAttribute('id') === oldId);
+    const replacement = build.gear?.[key];
+    if (!slot) {
+      slot = doc.createElement('Slot');
+      slot.setAttribute('name', slotName);
+      active.appendChild(slot);
+    }
+    if (!replacement) { slot.setAttribute('itemId', '0'); continue; }
+    const raw = replacement.pobItemText || originalItem?.textContent;
+    if (!raw) throw new Error('Paste complete PoB2 item text to fill the empty ' + slotName + ' slot.');
+    const newText = patchPobItemText(raw, replacement);
+    if (!replacement.pobItemText && originalItem.children.length) {
+      // PoB2 stores legacy rolled-modifier selections in ModRange children.
+      // Numeric edits keep modifier positions and categories unchanged, so
+      // these selections still address the same mods. Structural changes need
+      // a complete replacement until a reliable index remapper is available.
+      const children = [...originalItem.children];
+      if (children.some(child => child.tagName !== 'ModRange' || child.children.length || child.textContent.trim())) {
+        throw new Error('This item has unsupported embedded data (' + children.map(child => child.tagName).join(', ') + '). Paste complete replacement item text to replace it explicitly.');
+      }
+      const before = parsePobItemText(raw);
+      const oldMods = [...before.implicits, ...before.mods];
+      const shape = line => cleanModText(line).replace(/\{[^}]*\}|[+-]?\d+(?:\.\d+)?/g, token => token.startsWith('{') ? token : '#');
+      if (before.implicits.length !== replacement.implicits.length || oldMods.length !== replacement.mods.length ||
+          oldMods.some((line, index) => shape(line) !== shape(replacement.mods[index]))) {
+        throw new Error('This item has saved modifier-roll data. Numeric changes can be exported; to add, remove, or replace modifiers, paste the complete replacement item from PoB2.');
+      }
+    }
+    // Allocate a new ID so other item sets, weapon swaps, and jewel bindings
+    // that reference the original item remain untouched.
+    const element = replacement.pobItemText ? doc.createElement('Item') : originalItem.cloneNode(true);
+    element.setAttribute('id', String(nextId++));
+    // Replace only the raw item text, retaining ModRange child elements.
+    [...element.childNodes].filter(node => node.nodeType === 3 || node.nodeType === 4).forEach(node => node.remove());
+    element.insertBefore(doc.createTextNode('\n' + newText + '\n'), element.firstChild);
+    items.insertBefore(element, sets[0] || null);
+    slot.setAttribute('itemId', element.getAttribute('id'));
+    slot.removeAttribute('itemPbURL');
+  }
+  // Imported calculated values describe the baseline, not these edits.
+  doc.querySelectorAll('Build > PlayerStat, Build > MinionStat').forEach(stat => stat.remove());
+  const xml = new XMLSerializer().serializeToString(doc);
+  parsePobXml(xml);
+  return { xml, changedSlots: changedSlots.map(([name]) => name) };
 }
 
 // ── EXPORT MODAL HANDLERS (Phase 6) ─────────────────────────────────────
@@ -4519,7 +4679,8 @@ async function openExportModal() {
   lastExportedCode = null;
   lastExportedXml = null;
   setExportActionsEnabled(false);
-  const exportingBuild = currentBuild;
+  const selectedBuild = currentBuild;
+  const exportingBuild = currentBuild && JSON.parse(JSON.stringify(currentBuild));
   if (!currentBuild) {
     toast('Load a build first', 'err');
     return;
@@ -4530,12 +4691,14 @@ async function openExportModal() {
   overlay.classList.add('show');
 
   try {
-    const { code } = await encodePobCode(exportingBuild);
+    const { code, mode, changedSlots = [] } = await encodePobCode(exportingBuild);
     // Check encoding/XML format; this is not a live PoB2 compatibility test.
     let validation = { ok: false, msg: 'unvalidated' };
+    let validatedXml = null;
     try {
       const xmlBack = await decodePobCode(code);
       const parsed = parsePobXml(xmlBack);
+      validatedXml = xmlBack;
       validation = {
         ok: true,
         msg: `Decoded back · ${parsed.build.className || '?'} · L${parsed.build.level || '?'} · ${parsed.items.length} items`,
@@ -4543,16 +4706,21 @@ async function openExportModal() {
     } catch (e) {
       validation = { ok: false, msg: 'Decode-back failed: ' + (e.message || e) };
     }
-    if (requestId !== exportRequestId || exportingBuild !== currentBuild) return;
+    if (requestId !== exportRequestId || selectedBuild !== currentBuild) return;
     if (!validation.ok) throw new Error(validation.msg);
     const c = exportingBuild.character || {};
-    const modePill = '<span class="export-mode-pill roundtrip">Unchanged · original PoB2 code</span>';
+    const modePill = mode === 'gear-edited'
+      ? '<span class="export-mode-pill roundtrip">Equipment edits included</span>'
+      : '<span class="export-mode-pill roundtrip">Unchanged · original PoB2 code</span>';
     lastExportedCode = code;
+    lastExportedXml = validatedXml;
     setExportActionsEnabled(true);
     body.innerHTML = `
       <div class="export-blurb">
         ${modePill}
-        <span style="margin-left:8px">Paste into <strong>Path of Building 2</strong> using Import/Export Build. The code is unchanged from your original PoB2 import.</span>
+        <span style="margin-left:8px">Paste into <strong>Path of Building 2</strong> using Import/Export Build. ${mode === 'gear-edited'
+          ? 'Updated: ' + escHtml(changedSlots.join(', ')) + '. Import as a new build to compare with your original. PoB2 will recalculate the stats; no purchase or in-game change is needed.'
+          : 'The code is unchanged from your original PoB2 import.'}</span>
       </div>
       <textarea class="export-textarea" id="export-code" readonly>${escHtml(code)}</textarea>
       <div class="export-meta">
@@ -4603,9 +4771,7 @@ async function copyExportCode() {
 
 function downloadExportXml() {
   if (!lastExportedXml) {
-    // Roundtrip mode: re-decode the original code to get its XML
-    if (!lastExportedCode) { toast('Nothing to download', 'err'); return; }
-    decodePobCode(lastExportedCode).then(xml => triggerDownload(xml, 'build.xml'));
+    toast('Open Export Build to prepare a download.', 'err');
     return;
   }
   triggerDownload(lastExportedXml, 'build.xml');
@@ -4637,11 +4803,11 @@ document.addEventListener('keydown', (e) => {
 // ═════════════════════════════════════════════════════════════════════════
 // Edit any of the 10 main-gear slots in place. On save we mutate
 // currentBuild.gear[slot] and set editedSinceImport (stats stale until the
-// calc engine recomputes). Export stays unavailable for edited builds until
-// a serializer can preserve the complete PoB2 build.
+// calc engine recomputes). Export patches equipment in the original document.
 
 let editMode = false;
 let editingSlot = null;
+let editingItemText = null;
 
 const SLOT_DISPLAY_NAMES = {
   weapon: 'Weapon 1', offhand: 'Weapon 2 / Offhand',
@@ -4657,22 +4823,32 @@ function toggleEditMode() {
   renderOptimizerCenterPanel();
 }
 
-function openSlotEditor(slot) {
+function openSlotEditor(slot, replacement = null) {
   if (!currentBuild) return;
   if (!currentBuild.gear) currentBuild.gear = {};
   editingSlot = slot;
-  const item = currentBuild.gear[slot] || {
+  const item = replacement || currentBuild.gear[slot] || {
     rarity: 'rare', name: '', typeLine: '', ilvl: 1,
     implicits: [], mods: [], sockets: [],
   };
+  editingItemText = item.pobItemText || null;
   // mods on the schema is implicits-concatenated-with-explicits — see Phase 2
   // mapPobToBuild. Tease them apart for the two editor sections.
   const implicits = item.implicits || [];
-  const explicits = (item.mods || []).filter(m => !implicits.includes(m));
+  const explicits = (item.mods || []).slice(implicits.length);
 
   document.getElementById('slot-editor-title').textContent = `Edit · ${SLOT_DISPLAY_NAMES[slot] || slot}`;
   const body = document.getElementById('slot-editor-body');
   body.innerHTML = `
+    <div class="editor-field" style="margin-bottom:16px">
+      <label class="editor-field-label" for="edit-pob-item">Paste PoB2 item text</label>
+      <textarea class="editor-input wide" id="edit-pob-item" rows="4" style="resize:vertical" placeholder="Rarity: RARE&#10;Candidate item name&#10;Base type&#10;…&#10;Implicits: 0"></textarea>
+      <div style="display:flex;gap:12px;align-items:center;margin-top:8px">
+        <button class="export-btn ghost" style="flex-shrink:0" onclick="loadPobItemIntoEditor()">LOAD ITEM TEXT</button>
+        <span style="font-size:11px;color:var(--text-dim)">Copy the complete item text from PoB2’s item editor. You can try an item without buying it.</span>
+      </div>
+      <span id="edit-pob-status" role="status" style="font-size:11px;color:var(--text-dim)">${editingItemText ? 'Replacement loaded. Quality, sockets, and other item properties are retained.' : 'Or adjust the current item’s modifiers below.'}</span>
+    </div>
     <div class="editor-header-grid">
       <div class="editor-field">
         <span class="editor-field-label">Rarity</span>
@@ -4681,6 +4857,7 @@ function openSlotEditor(slot) {
           <option value="magic"  ${item.rarity==='magic'?'selected':''}>Magic</option>
           <option value="rare"   ${item.rarity==='rare'?'selected':''}>Rare</option>
           <option value="unique" ${item.rarity==='unique'?'selected':''}>Unique</option>
+          <option value="relic"  ${item.rarity==='relic'?'selected':''}>Relic</option>
         </select>
       </div>
       <div class="editor-field">
@@ -4695,6 +4872,7 @@ function openSlotEditor(slot) {
     <div class="editor-field">
       <span class="editor-field-label">Base Type</span>
       <input class="editor-input wide" id="edit-typeLine" value="${escAttr(item.typeLine || '')}" placeholder="e.g. Stellar Amulet">
+      <span style="font-size:11px;color:var(--text-dim)">To change base type or rarity, load the replacement’s complete PoB2 item text above.</span>
     </div>
 
     <div class="editor-section-head">
@@ -4718,6 +4896,22 @@ function openSlotEditor(slot) {
   document.getElementById('edit-rarity').addEventListener('change', e => {
     e.target.className = 'editor-select editor-rarity-' + e.target.value;
   });
+}
+
+function loadPobItemIntoEditor() {
+  try {
+    const raw = document.getElementById('edit-pob-item').value.trim();
+    splitEditablePobItemText(raw);
+    const item = parsePobItemText(raw);
+    if (!item.typeLine) throw new Error('The item has no base type. Copy the complete item from PoB2.');
+    openSlotEditor(editingSlot, {
+      ...item, mods: [...item.implicits, ...item.mods],
+      sockets: item.sockets ? item.sockets.split(/[\s-]+/) : [], pobItemText: raw,
+    });
+  } catch (e) {
+    document.getElementById('edit-pob-status').textContent = e.message;
+    toast(e.message, 'err');
+  }
 }
 
 function modRowHtml(text) {
@@ -4757,16 +4951,19 @@ function saveSlotEdit() {
   }
   if (!currentBuild.gear) currentBuild.gear = {};
   const prev = currentBuild.gear[editingSlot];
+  const pasted = editingItemText ? parsePobItemText(editingItemText) : null;
   currentBuild.gear[editingSlot] = {
     rarity, name, typeLine, ilvl,
     implicits,
     mods: [...implicits, ...explicits],   // see Phase 2 mapPobToBuild
-    sockets: prev?.sockets || [],
+    sockets: pasted ? (pasted.sockets ? pasted.sockets.split(/[\s-]+/) : []) : prev?.sockets || [],
+    ...(editingItemText ? { pobItemText: editingItemText } : {}),
   };
+  const slotLabel = SLOT_DISPLAY_NAMES[editingSlot];
   markBuildEdited();
   setCurrentBuild(currentBuild);   // persists + re-renders paperdoll
   closeSlotEditor();
-  toast(`${SLOT_DISPLAY_NAMES[editingSlot]} saved`, 'ok');
+  toast(`${slotLabel} saved · export to PoB2 to recalculate`, 'ok');
 }
 
 function clearSlotEdit() {
@@ -4774,14 +4971,16 @@ function clearSlotEdit() {
   if (!currentBuild.gear?.[editingSlot]) { closeSlotEditor(); return; }
   if (!confirm(`Clear ${SLOT_DISPLAY_NAMES[editingSlot]}?`)) return;
   currentBuild.gear[editingSlot] = null;
+  const slotLabel = SLOT_DISPLAY_NAMES[editingSlot];
   markBuildEdited();
   setCurrentBuild(currentBuild);
   closeSlotEditor();
-  toast(`${SLOT_DISPLAY_NAMES[editingSlot]} cleared`, 'ok');
+  toast(`${slotLabel} cleared`, 'ok');
 }
 
 function closeSlotEditor() {
   editingSlot = null;
+  editingItemText = null;
   document.getElementById('slot-editor-overlay').classList.remove('show');
 }
 
@@ -4789,6 +4988,10 @@ function closeSlotEditor() {
 // (Phase 8 will recompute). The original code no longer describes this build.
 function markBuildEdited() {
   currentBuild.editedSinceImport = true;
+  exportRequestId++;
+  lastExportedCode = null;
+  lastExportedXml = null;
+  setExportActionsEnabled(false);
 }
 
 document.addEventListener('keydown', e => {
@@ -5445,7 +5648,7 @@ function renderGallery() {
 
   // Update save-bar visibility based on whether we have something to save
   const saveBar = document.getElementById('gallery-save-bar');
-  if (getOriginalPobCode(currentBuild)) {
+  if (currentBuild?.source === 'pob2' && currentBuild.originalPobCode) {
     saveBar.style.display = '';
     document.getElementById('save-bar-name').textContent =
       `${currentBuild.character?.ascendancy || currentBuild.character?.class || 'PoB Build'} · L${currentBuild.character?.level || '?'}`;
@@ -5527,13 +5730,18 @@ async function loadGalleryBuild(id) {
   }
 }
 
-function saveCurrentToGallery() {
-  const code = getOriginalPobCode(currentBuild);
-  if (!code) {
-    toast('Gallery saving requires an unchanged build with its original PoB2 code.', 'err');
+async function saveCurrentToGallery() {
+  if (!currentBuild) {
+    toast('Load a build before saving to the gallery.', 'err');
     return;
   }
-  const c = currentBuild.character || {};
+  const snapshot = JSON.parse(JSON.stringify(currentBuild));
+  let code;
+  try {
+    ({ code } = await encodePobCode(snapshot));
+    parsePobXml(await decodePobCode(code));
+  } catch (e) { toast(e.message, 'err'); return; }
+  const c = snapshot.character || {};
   const suggested = `${c.ascendancy || c.class || 'Build'} · L${c.level || '?'}`;
   const name = prompt('Save this build as:', suggested);
   if (!name) return;
@@ -5545,7 +5753,7 @@ function saveCurrentToGallery() {
     creator: 'You',
     class: c.class || '',
     ascendancy: c.ascendancy || '',
-    mainSkill: currentBuild.skills?.[0]?.mainSkill || '',
+    mainSkill: snapshot.skills?.[0]?.mainSkill || '',
     playstyle: '',
     tier: 'endgame',
     description: '',
