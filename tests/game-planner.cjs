@@ -62,7 +62,7 @@ async function download(p) {
     if(!/^[\w.-]+$/.test(rel)&&!/^icons\/[\w.-]+$/.test(rel)){res.writeHead(404).end();return;}
     const file=path.join(root,rel);
     if(!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404).end();return;}
-    res.writeHead(200,{'Content-Type':rel.endsWith('.html')?'text/html':rel.endsWith('.js')?'text/javascript':rel.endsWith('.json')?'application/json':'image/webp'});fs.createReadStream(file).pipe(res);
+    res.writeHead(200,{'Content-Type':rel.endsWith('.html')?'text/html':rel.endsWith('.css')?'text/css':rel.endsWith('.js')?'text/javascript':rel.endsWith('.json')?'application/json':'image/webp'});fs.createReadStream(file).pipe(res);
   });
   await new Promise(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${server.address().port}`;
   browser=await chromium.launch({headless:true,...(process.env.FORGE_TEST_BROWSER?{executablePath:process.env.FORGE_TEST_BROWSER}:{})});

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>POE2 FORGE — Build Optimizer v17</title>
+<link rel="stylesheet" href="poe2forge-workshop.css">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <!-- Phase 3: curated build codes loaded from sidecar so the main HTML stays
      editable. window.GALLERY_CODES = { slug: 'eNr...', ... } -->
@@ -2624,6 +2625,7 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
   <div class="top-tabs">
     <button class="top-tab" data-tab="welcome" onclick="switchTab('welcome')">Welcome</button>
     <button class="top-tab" data-tab="optimizer" onclick="switchTab('optimizer')">Optimizer</button>
+    <button class="top-tab" data-tab="workshop" onclick="switchTab('workshop')">Build Workshop</button>
     <button class="top-tab" data-tab="theorycraft" onclick="switchTab('theorycraft')">Theorycraft</button>
   </div>
 
@@ -2836,6 +2838,66 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
 </div>
 
 <!-- ═════════════════════════ THEORYCRAFT TAB ═════════════════════════ -->
+<div class="tab-content" id="tab-workshop">
+  <main class="workshop">
+    <div class="workshop-head">
+      <div><span class="workshop-eyebrow">Your build, considered</span><h1>Try a change. See its impact.</h1><p>Describe an equipment change. Forge calculates both versions with your local PoB2 engine and shows what changed.</p></div>
+      <div class="workshop-origin"><button id="workshop-start" class="primary">Use current build</button><p id="workshop-current"></p></div>
+    </div>
+    <div id="workshop-status" class="workshop-status" role="status" aria-live="polite"></div>
+    <section id="workshop-empty" class="workshop-empty"><span class="workshop-eyebrow">Original → candidate → comparison</span><h2 style="margin-top:16px">An original you can always return to.</h2><p>Import your character through Theorycraft → PoB2 Decoder. Then choose Use current build to save an original and begin experimenting with a separate candidate.</p><button onclick="switchTab('theorycraft');switchSubtab('pob-decoder')">Import a PoB2 build</button></section>
+    <div id="workshop-workspace" hidden>
+      <div class="workshop-toolbar"><div><strong id="workshop-character"></strong><p><span id="workshop-count"></span></p></div><div class="workshop-actions" style="margin:0"><button id="workshop-undo" class="quiet">Undo last change</button><button id="workshop-reset" class="quiet">Restore original</button></div></div>
+      <div class="workshop-grid">
+        <div>
+          <section class="workshop-card">
+            <div class="workshop-card-head"><h2>Your build's impact</h2><span class="workshop-eyebrow">Calculated by PoB2</span></div>
+            <p id="workshop-stats-note"></p>
+            <div id="workshop-impact" class="workshop-impact"></div>
+            <details class="workshop-manual"><summary>Damage and defence details</summary><table class="workshop-table"><thead><tr><th scope="col">Metric</th><th scope="col">Original</th><th scope="col">Candidate</th><th scope="col">Change</th></tr></thead><tbody id="workshop-stats"></tbody></table></details>
+            <div class="workshop-sources"><div><strong>Original</strong><br><span id="workshop-baseline-source"></span></div><div><strong>Candidate</strong><br><span id="workshop-candidate-source"></span></div></div>
+          </section>
+          <section class="workshop-card">
+            <div class="workshop-card-head"><h2>Equipment comparison</h2><div><label for="workshop-slot">Equipment slot</label><select id="workshop-slot"></select></div></div>
+            <div class="workshop-columns"><div><div class="workshop-column-label">Original · preserved</div><div id="workshop-before-item"></div></div><div><div class="workshop-column-label candidate">Candidate · yours to change</div><div id="workshop-after-item"></div></div></div>
+            <p class="workshop-hint" style="margin-top:18px">Changed lines are highlighted. Explore any equipment slot with the selector above.</p>
+          </section>
+        </div>
+        <div>
+          <section class="workshop-card">
+            <div class="workshop-card-head"><h2>Try a specific stat change</h2><span class="workshop-eyebrow">Original preserved</span></div>
+            <label for="workshop-request">Which item's stat and value would you like to change?</label>
+            <textarea id="workshop-request" maxlength="400" placeholder="Change crossbow +2 to +4 proj skills" spellcheck="false" aria-describedby="workshop-request-help"></textarea>
+            <div class="workshop-actions"><button id="workshop-try" class="primary">Try change</button><button id="workshop-preview" class="quiet">Preview only</button></div>
+            <p class="workshop-hint" id="workshop-request-help">Choose one existing modifier and its new value: projectile skill levels, life, resistances, attributes, speed, or damage. Forge calculates the impact; choosing an optimal item is not available yet. For a complete replacement item, use the Optimizer's gear editor.</p>
+            <div id="workshop-proposal" class="workshop-preview" hidden><span id="workshop-proposal-slot" class="workshop-eyebrow"></span><p class="before">Before: <span id="workshop-proposal-before"></span></p><p class="after">After: <span id="workshop-proposal-after"></span></p><button id="workshop-apply" class="primary">Apply &amp; calculate</button></div>
+          </section>
+          <section class="workshop-card">
+            <h2>Automatic calculation</h2>
+            <p id="workshop-engine-status" class="workshop-engine-status">Checking the local calculator…</p>
+            <label for="workshop-skill">Compare this skill</label><select id="workshop-skill"><option value="">Selected skill from PoB2</option></select>
+            <p class="workshop-hint">Each change recalculates damage and defences. Your original remains saved, and Undo also refreshes the comparison.</p>
+            <button id="workshop-calculate">Calculate impact</button>
+            <details id="workshop-manual" class="workshop-manual"><summary>Manual PoB2 tools</summary>
+            <div class="workshop-step">01 · Check the candidate in PoB2</div>
+            <p>Import the candidate into a separate PoB2 build. Keep its selected skill and configuration unchanged, let PoB2 calculate, then copy a fresh export code.</p>
+            <div class="workshop-actions"><button id="workshop-export">Get candidate PoB2 code</button><button id="workshop-export-original" class="quiet">Get original code</button></div>
+            <div id="workshop-export-panel" hidden><label for="workshop-export-code" id="workshop-export-label" style="margin-top:14px">Candidate PoB2 code</label><textarea id="workshop-export-code" class="code" readonly></textarea><button id="workshop-copy">Copy code</button></div>
+            <div class="workshop-step">02 · Attach the matching results</div>
+            <div class="workshop-result-controls"><label for="workshop-result-side">These results are for</label><select id="workshop-result-side"><option value="candidate">Candidate</option><option value="baseline">Original</option></select></div>
+            <label for="workshop-result-code">Recalculated PoB2 code</label><textarea id="workshop-result-code" class="code" placeholder="Paste the fresh code from PoB2" spellcheck="false"></textarea>
+            <button id="workshop-check-result">Check returned build</button>
+            <div id="workshop-return-preview" class="workshop-preview" hidden><p id="workshop-returned-label"></p><button id="workshop-adopt-result" class="primary">Attach PoB2 results</button></div>
+            <p class="workshop-hint">Optional fallback: export either version and attach matching results manually. The automatic calculator handles this in local Forge.</p>
+            </details>
+          </section>
+          <section class="workshop-card"><h2>Take the candidate forward</h2><p>Open the candidate in the Optimizer to edit complete items, save it to your gallery, or generate its in-game guide. Return here and capture those equipment edits to compare them.</p><div class="workshop-actions"><button id="workshop-open">Open candidate in Optimizer</button><button id="workshop-capture" class="quiet">Use Optimizer edits</button></div><p class="workshop-hint">Opening the candidate replaces the Optimizer's current build. Your original stays in the Workshop; Game Planner guides are saved separately.</p></section>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
 <div class="tab-content" id="tab-theorycraft">
   <div class="theorycraft-container">
 
@@ -3263,6 +3325,7 @@ function setCurrentBuild(build) {
   // Keep the scanner's "current build" status fresh if it's been visited
   if (typeof updateScannerCurrentStatus === 'function') updateScannerCurrentStatus();
   if (typeof refreshPlannerCurrentLabel === 'function') refreshPlannerCurrentLabel();
+  window.ForgeWorkshop?.refresh();
 }
 
 function loadStoredBuild() {
@@ -3473,6 +3536,7 @@ function switchTab(tab) {
   localStorage.setItem(STORAGE_KEYS.visited, '1');
 
   if (tab === 'welcome') runSetupCheck();
+  if (tab === 'workshop') window.ForgeWorkshop?.refresh();
   if (tab === 'optimizer') {
     renderOptimizerLeftPanel();
     renderOptimizerCenterPanel();
@@ -6147,6 +6211,7 @@ async function loadPoe2dbData() {
   }
   // Repaint the paperdoll if a build is loaded — icons may now resolve
   if (currentBuild) renderOptimizerCenterPanel();
+  window.ForgeWorkshop?.refresh();
 }
 
 function altQualityNegatesDownside(skill) {
@@ -6519,6 +6584,7 @@ function init() {
 
 init();
 </script>
+<script src="poe2forge-workshop.js"></script>
 
 <div style="position:fixed;bottom:6px;left:12px;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.5px;color:#5a5040;z-index:60;pointer-events:none">This product isn't affiliated with or endorsed by Grinding Gear Games in any way.</div>
 
