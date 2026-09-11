@@ -21,6 +21,7 @@
  * .env keys (all optional):
  *   PORT           — server port (default 3001)
  *   POB2_PATH      — absolute path to PoB2 executable (enables auto-launch)
+ *   POB2_PYTHON    — optional 64-bit Python executable for local calculations
  *   CONTACT_EMAIL  — sent in User-Agent to poe2scout per their API guidance
  *
  * POESESSID and POE_ACCOUNT are NO LONGER READ. If present in .env (or the
@@ -38,7 +39,7 @@ const { spawn } = require('child_process');
 // Load .env file if present — SUPPORTED KEYS ONLY. Anything else is left
 // untouched; retired credential keys are recorded by name for the startup
 // notice, but their values never enter process.env.
-const SUPPORTED_ENV_KEYS = ['PORT', 'POB2_PATH', 'CONTACT_EMAIL'];
+const SUPPORTED_ENV_KEYS = ['PORT', 'POB2_PATH', 'POB2_PYTHON', 'CONTACT_EMAIL'];
 const RETIRED_KEY_NAMES = ['POESESSID', 'POE_ACCOUNT'];
 const envFileRetiredKeys = [];
 try {
@@ -323,6 +324,8 @@ const STATIC_FILES = {
   'poe2forge-gallery-codes.js': 'application/javascript; charset=utf-8',
   'poe2forge-planner.js':       'application/javascript; charset=utf-8',
   'poe2forge-planner-data.json':'application/json; charset=utf-8',
+  'poe2forge-workshop.js':     'application/javascript; charset=utf-8',
+  'poe2forge-workshop.css':    'text/css; charset=utf-8',
   'poe2db-base-types.json':     'application/json; charset=utf-8',
   'poe2db-skills.json':         'application/json; charset=utf-8',
   'poe2db-uniques.json':        'application/json; charset=utf-8',
@@ -375,6 +378,7 @@ function serveStatic(reqPath, res) {
 }
 
 // ── MAIN SERVER ───────────────────────────────────────────────────────────────
+let localCalculator;
 function handleRequest(req, res) {
   if (!gateRequest(req, res)) return;
 
@@ -382,6 +386,12 @@ function handleRequest(req, res) {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const reqPath = url.pathname;
+
+  if (reqPath === '/pob2-calculator' || reqPath === '/pob2-calculate') {
+    localCalculator ||= require('./poe2forge-calc').createCalculator({port:PORT});
+    localCalculator.handle(req,res,reqPath);
+    return;
+  }
 
   console.log(`[${new Date().toISOString()}] ${req.method} ${reqPath}`);
 

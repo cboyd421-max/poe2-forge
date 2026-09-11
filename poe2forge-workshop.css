@@ -1,0 +1,83 @@
+#tab-workshop {overflow-y:auto;background:radial-gradient(ellipse at 75% 0,rgba(69,132,139,.12),transparent 55%),#0d1119;color:#e1e5ee;}
+.workshop {max-width:1320px;margin:0 auto;padding:32px 30px 70px;font-family:Inter,'Segoe UI',sans-serif;}
+.workshop [hidden] {display:none!important;}
+.workshop button,.workshop select,.workshop textarea {font:inherit;}
+.workshop button {border:1px solid #3c485a;background:#1d2838;color:#e9eef4;padding:10px 15px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;transition:background .15s,border-color .15s;}
+.workshop button:hover:not(:disabled) {background:#2b3a4c;border-color:#91b3b7;}
+.workshop button:disabled {opacity:.4;cursor:not-allowed;}
+.workshop button.primary {background:#aed9cc;color:#101c1a;border-color:#aed9cc;}
+.workshop button.primary:hover:not(:disabled) {background:#c6e9df;}
+.workshop button.quiet {background:transparent;}
+.workshop :is(button,select,textarea):focus-visible {outline:2px solid #e2c28c;outline-offset:3px;}
+.workshop-head,.workshop-toolbar,.workshop-card-head,.workshop-actions {display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.workshop-head {margin-bottom:24px;align-items:flex-start;}
+.workshop h1 {font:500 clamp(28px,3vw,40px)/1.15 Georgia,serif;letter-spacing:-.7px;color:#f1eadd;margin:7px 0 12px;}
+.workshop h2 {font-size:17px;color:#e9e7e1;font-weight:600;margin:0;}
+.workshop h3 {font-size:16px;font-weight:600;line-height:1.5;margin:5px 0;color:#e8cf9f;}
+.workshop p {color:#a9b6c6;font-size:13px;line-height:1.7;margin:7px 0;max-width:750px;}
+.workshop-eyebrow {display:block;color:#b8c9d1;font-size:10px;letter-spacing:1.8px;text-transform:uppercase;font-weight:600;}
+.workshop-origin {text-align:right;max-width:300px;padding-top:8px;}
+.workshop-origin p {font-size:12px;margin:10px 0;}
+.workshop-status {font-size:13px;line-height:1.6;color:#bdcec9;min-height:24px;margin:12px 0 20px;border-left:2px solid #5c8a7c;padding-left:12px;}
+.workshop-status:empty {border-color:transparent;}
+.workshop-status.error {color:#f0b9a9;border-color:#dc8873;}
+.workshop-empty {border:1px dashed #405368;border-radius:12px;padding:46px 30px;text-align:center;background:#151e2a;}
+.workshop-empty p {margin:12px auto;max-width:550px;}
+.workshop-toolbar {padding:16px 20px;margin-bottom:18px;background:#182330;border:1px solid #334255;border-radius:10px;}
+.workshop-toolbar strong {font-size:15px;font-weight:600;}
+.workshop-toolbar span {font-size:12px;color:#c8d8d6;}
+.workshop-grid {display:grid;grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr);gap:20px;align-items:start;}
+.workshop-card {background:#151d29;border:1px solid #2b394c;border-radius:12px;padding:22px;min-width:0;}
+.workshop-card+.workshop-card {margin-top:20px;}
+.workshop-card-head {margin-bottom:18px;}
+.workshop-card label {font-size:12px;color:#cbd4df;display:block;margin-bottom:8px;}
+.workshop select {background:#111925;color:#d6e2ec;border:1px solid #44536a;border-radius:6px;padding:8px 10px;max-width:100%;font-size:12px;}
+.workshop textarea {display:block;box-sizing:border-box;width:100%;resize:vertical;min-height:106px;border:1px solid #465772;border-radius:8px;background:#0e1621;color:#eef0f5;padding:14px;line-height:1.7;font-size:14px;margin-bottom:12px;}
+.workshop textarea::placeholder {color:#899aac;}
+.workshop textarea.code {font-family:ui-monospace,Consolas,monospace;font-size:11px;word-break:break-all;}
+.workshop-columns {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;}
+.workshop-column-label {font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#aebacc;padding:0 0 10px;}
+.workshop-column-label.candidate {color:#b4ddcf;}
+.workshop-item {background:#0f1621;border:1px solid #2b3a4e;border-radius:8px;padding:16px;height:100%;min-height:240px;overflow-wrap:anywhere;}
+.workshop-item.empty {color:#93a5b7;display:flex;align-items:center;justify-content:center;}
+.workshop-item-head {display:flex;gap:12px;align-items:center;padding-bottom:15px;border-bottom:1px solid #263447;min-height:105px;}
+.workshop-item-head img {width:48px;height:72px;object-fit:contain;filter:drop-shadow(0 3px 9px #000);}
+.workshop-item-head p {font-size:11px;line-height:1.6;}
+.workshop-item-head .workshop-eyebrow {font-size:9px;letter-spacing:1px;}
+.workshop-gem {font-size:40px;color:#6f9199;padding:4px;}
+.workshop-item ul {list-style:none;margin:12px 0 0;padding:0;font-size:12px;line-height:1.75;color:#a9bde1;}
+.workshop-item li {padding:5px 7px;margin:2px -7px;border-radius:4px;}
+.workshop-item li.removed {color:#e1b4a4;background:#53372d55;}
+.workshop-item li.added {color:#b4ebd3;background:#26594b66;}
+.workshop-preview {background:#0e1820;border:1px solid #527e72;border-radius:8px;padding:16px;margin:18px 0 0;}
+.workshop-preview p {overflow-wrap:anywhere;}
+.workshop-preview .before {color:#e2b6a5;}
+.workshop-preview .after {color:#b9ead4;font-weight:600;}
+.workshop-preview button {margin-top:10px;}
+.workshop-hint {font-size:11px!important;color:#99aabd!important;}
+.workshop-actions {justify-content:flex-start;margin-top:18px;gap:9px;}
+.workshop-table {width:100%;border-collapse:collapse;font-size:12px;}
+.workshop-table th {text-align:left;font-weight:500;color:#c2ccda;}
+.workshop-table td {text-align:right;font-variant-numeric:tabular-nums;color:#dce3e9;}
+.workshop-table th,.workshop-table td {padding:11px 5px;border-bottom:1px solid #2a3748;}
+.workshop-table thead th {font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#8fa2b8;}
+.workshop-table thead th:not(:first-child) {text-align:right;}
+.workshop-table .positive {color:#b0dfc5;}.workshop-table .negative {color:#e8b49f;}
+.workshop-sources {display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:13px;color:#9cafc3;font-size:10px;line-height:1.6;}
+.workshop-step {color:#b9d9cf;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:20px 0 10px;}
+.workshop-result-controls {display:flex;align-items:center;gap:12px;margin:14px 0;}
+.workshop-result-controls label {margin:0;}
+.workshop-impact {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:20px 0;}
+.workshop-impact-card {display:flex;flex-direction:column;gap:8px;padding:16px;border:1px solid #36534f;background:linear-gradient(135deg,#19302c99,#101923);border-radius:9px;}
+.workshop-impact-card>span {font-size:11px;color:#b5c8d1;}
+.workshop-impact-card>strong {font-size:27px;letter-spacing:-.5px;font-weight:600;color:#dfebdd;font-variant-numeric:tabular-nums;}
+.workshop-impact-card>small {font-size:11px;color:#9fb0c5;}.workshop-impact-card>em {font-size:11px;font-style:normal;color:#a9bacc;}
+.workshop-impact-card>.positive {color:#b0dfc5;}.workshop-impact-card>.negative {color:#e8b49f;}
+.workshop .workshop-engine-status {color:#dbbc95;font-size:12px;}.workshop .workshop-engine-status.connected {color:#a5dbbf;}
+.workshop-manual {border-top:1px solid #334255;margin-top:20px;padding-top:15px;}.workshop-manual>summary {font-size:12px;color:#a9b9cb;cursor:pointer;padding:5px 0;}
+#workshop-skill {width:100%;margin:3px 0 9px;}
+#app:has(#tab-workshop.active) #proxy-dot,#app:has(#tab-workshop.active) #league-badge {display:none;}
+@media(max-width:1000px){.workshop-grid{grid-template-columns:1fr}.workshop{padding:22px 20px 60px}.workshop-origin{max-width:none;text-align:left}.workshop-card{padding:18px}}
+@media(max-width:540px){.workshop-columns{grid-template-columns:1fr}.workshop{padding:20px 12px 60px}.workshop-card{padding:15px}.workshop-item{min-height:0}.workshop-toolbar{padding:14px}.workshop button{padding:10px 12px}.workshop-table{font-size:11px}.workshop-table th,.workshop-table td{padding:10px 3px}}
+@media(max-width:1100px){#app>header{flex-wrap:wrap;gap:12px;padding:12px 16px}#app>header .top-tabs{order:3;flex-basis:100%;margin-left:0;min-width:0;overflow-x:auto}#app>header .top-tab{white-space:nowrap;letter-spacing:1px;padding:10px 14px}#app>header .header-right{flex-wrap:wrap;gap:7px}}
+@media(max-width:1000px){.workshop-grid{display:flex;flex-direction:column}.workshop-grid>div{display:contents}.workshop-grid .workshop-card{width:100%;margin-top:0}.workshop-grid>div:first-child>.workshop-card:first-child{order:2}.workshop-grid>div:first-child>.workshop-card:last-child{order:3}.workshop-grid>div:last-child>.workshop-card:first-child{order:1}.workshop-grid>div:last-child>.workshop-card:nth-child(2){order:4}.workshop-grid>div:last-child>.workshop-card:last-child{order:5}}
