@@ -28,6 +28,10 @@ def run():
     skill = request.get('skillGroup')
     if skill is not None and (type(skill) is not int or not 1 <= skill <= 200):
         raise ValueError('Invalid skill group.')
+    optimization = request.get('optimization')
+    if optimization is not None:
+        if not isinstance(optimization, dict) or optimization.get('slot') != 'weapon' or type(optimization.get('level')) is not int or optimization['level'] != int(root.find('Build').get('level', 0)) or type(optimization.get('keepDefences')) is not bool or skill is None:
+            raise ValueError('Optimization must use the imported character level and a selected skill.')
     dll_directory = os.add_dll_directory(str(pob))
     lua = ctypes.CDLL(str(pob / 'lua51.dll'))
     signatures = {
@@ -63,6 +67,7 @@ def run():
             global_string('_FORGE_CLASS', root.find('Build').get('className', ''))
             global_string('_FORGE_ASCENDANCY', root.find('Build').get('ascendClassName', 'None'))
             global_string('_FORGE_SKILL', str(skill or ''))
+            global_string('_FORGE_OPTIMIZE', json.dumps(optimization) if optimization else '')
             script = Path(__file__).with_name('calculate.lua').read_bytes()
             status = lua.luaL_loadbuffer(state, script, len(script), b'ForgeCalculator')
             if not status:

@@ -8,7 +8,7 @@
   const el = id => document.getElementById('workshop-'+id);
   const esc = value => escHtml(String(value ?? ''));
   let state = null, proposal = null, returned = null, revision = 0, busy = false;
-  let calculatorInfo=null, calculationAbort=null, calculationSequence=0, calculating=false;
+  let calculatorInfo=null, calculationAbort=null, calculationSequence=0, calculating=false, optimizing=false;
   const buildKey = build => JSON.stringify(build);
   const numeric = /[+-]?\d+(?:\.\d+)?/g;
 
@@ -16,7 +16,7 @@
     el('status').textContent = message;
     el('status').className = 'workshop-status' + (error ? ' error' : '');
   }
-  function invalidate() { revision++; proposal=null; returned=null; calculationAbort?.abort();calculationSequence++;calculating=false;el('export-code').value='';el('export-panel').hidden=true; }
+  function invalidate() { revision++; proposal=null; returned=null; calculationAbort?.abort();calculationSequence++;calculating=false;optimizing=false;el('export-code').value='';el('export-panel').hidden=true; }
   function persist(next) {
     // Save first: a quota failure must never silently discard the original.
     localStorage.setItem(KEY,JSON.stringify(next));
@@ -77,12 +77,66 @@
     return Object.keys(context.stats).length ? {stats:context.stats,skill:context.skill,receivedAt:new Date().toISOString()} : null;
   }
 
+  function optimizationRequest(text,build) {
+    const request=String(text).trim().replace(/[.!]$/,'').replace(/\s+/g,' ').toLowerCase();
+    if(!/\b(?:optimal|optimi[sz]e|best|maximi[sz]e)\b/.test(request))return null;
+    const ending='(?: for (?:my |a )?(?:build|level (\\d+)(?: character)?))?';
+    const patterns=[
+      '^optimi[sz]e (?:my |the )?(?:crossbow|weapon)(?: for (?:dps|damage))?'+ending+'$',
+      '^change (?:my |the )?(?:crossbow|weapon) to include optimal (?:dps|damage) stats'+ending+'$',
+      '^(?:find|choose|give (?:my |the )) ?(?:the )?(?:best (?:crossbow|weapon) stats|(?:crossbow|weapon) the best (?:dps|damage) stats)'+ending+'$'
+    ];
+    const match=patterns.map(p=>request.match(new RegExp(p))).find(Boolean);
+    if(!match)throw new Error('Try “Optimize my crossbow for DPS”. This pass uses your current level, crossbow base and item level. Budget, other equipment, and other optimization goals are not supported yet.');
+    const level=Number(build.character?.level);
+    if(match[1]&&Number(match[1])!==level)throw new Error('This comparison uses your imported level '+level+' character. Import the intended level before optimizing.');
+    return {level,slot:'weapon',keepDefences:el('keep-defences').checked};
+  }
+  function replacementProposal(raw,slot,request) {
+    if(raw.length>30000)throw new Error('Keep complete item text below 30 KB.');
+    splitEditablePobItemText(raw);
+    const item=parsePobItemText(raw);
+    if(slot!=='weapon'||!/Crossbow$/i.test(item.typeLine))throw new Error('This import accepts complete crossbow item text in the Weapon slot. Use the Optimizer gear editor for other equipment.');
+    const next=clone(state.candidate);
+    next.gear.weapon={...item,mods:[...item.implicits,...item.mods],sockets:item.sockets?item.sockets.split(/[\s-]+/):[],pobItemText:raw};
+    next.editedSinceImport=true;next.needsCalculation=true;
+    return {slot:'weapon',before:(state.candidate.gear.weapon?.mods||[]).join('\n'),after:next.gear.weapon.mods.join('\n'),next,request,requiresReview:true};
+  }
+  async function proposeOptimization(request,options,token) {
+    await refreshCalculator();
+    if(token!==revision)throw new DOMException('Cancelled','AbortError');
+    if(!calculatorInfo?.available)throw new Error('Build-aware optimization needs local Forge with its PoB2 calculator connected.');
+    if(!Number.isInteger(state.calculationSkill))throw new Error('Calculate the current build and choose its damaging skill first.');
+    calculationAbort=new AbortController();const controller=calculationAbort;
+    optimizing=true;render();status('Testing crossbow stat combinations for your selected skill. This can take up to 90 seconds…');
+    const source=await exported(clone(state.candidate));
+    if(token!==revision)throw new DOMException('Cancelled','AbortError');
+    let response;
+    for(let attempt=0;attempt<4;attempt++){
+      response=await fetch(new URL('pob2-optimize',document.baseURI),{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({...options,candidateCode:source.code,skillGroup:state.calculationSkill})});
+      if(response.status!==429||attempt===3)break;
+      await response.text();await new Promise(resolve=>setTimeout(resolve,250*(attempt+1)));
+    }
+    const payload=await response.json();if(!response.ok)throw new Error(payload.error||'Optimization failed.');
+    if(token!==revision)throw new DOMException('Cancelled','AbortError');
+    if(payload.inputHash!==await codeHash(source.code)||payload.skillGroup!==state.calculationSkill||payload.level!==options.level||payload.keepDefences!==options.keepDefences)throw new Error('The recommendation does not match this build and its constraints. Try again.');
+    if(!Array.isArray(payload.candidates)||!payload.stats||!Object.values(payload.stats).every(Number.isFinite))throw new Error('Invalid recommendation results.');
+    if(!payload.candidates.length)throw new Error('No DPS improvement meeting these constraints was found in '+payload.evaluated+' tested combinations. Your build is unchanged.');
+    const best=payload.candidates[0];
+    if(!best.stats||!Object.values(best.stats).every(Number.isFinite)||!Number.isFinite(best.stats.CombinedDPS)||best.stats.CombinedDPS<=payload.stats.CombinedDPS||!Number.isInteger(best.requiredLevel)||best.requiredLevel>options.level)throw new Error('The recommendation failed its result or level check.');
+    if(options.keepDefences&&['Life','EnergyShield','TotalEHP','FireResist','ColdResist','LightningResist','ChaosResist'].some(k=>Number.isFinite(payload.stats[k])&&(!Number.isFinite(best.stats[k])||best.stats[k]+0.001<payload.stats[k])))throw new Error('The recommendation would reduce a protected defence.');
+    const proposed=replacementProposal(best.itemText,'weapon',request);
+    proposed.note=`Best found in ${payload.evaluated} tested combinations · ${payload.skill} · PoB2 ${payload.engine.version}\nDPS ${format(payload.stats.CombinedDPS)} → ${format(best.stats.CombinedDPS)} · Effective hit pool ${format(payload.stats.TotalEHP)} → ${format(best.stats.TotalEHP)}\nSame base: ${payload.baseName} · Item level ${payload.itemLevel} · Required character level ${best.requiredLevel}\nMaximum-roll theoretical target. Prices and availability are unverified. ${payload.limitReached?'Search limit reached. ':''}This is a bounded search, not a guaranteed global optimum. Review all replaced modifiers below.`;
+    const recoveryChanges=(state.candidate.gear.weapon?.mods||[]).filter(line=>/leech|regenerat|per enemy killed|on kill/i.test(line)&&!proposed.next.gear.weapon.mods.includes(line));
+    if(recoveryChanges.length)proposed.note+='\nRecovery modifiers replaced: '+recoveryChanges.join('; ')+'.';
+    return proposed;
+  }
+
   // Deliberately consume the complete request. Unsupported or ambiguous text
   // must not turn a partial interpretation into an equipment change.
   function interpret(text,build) {
     const request=String(text).trim().replace(/[.!]$/,'').replace(/\s+/g,' ');
     if(request.length>400) throw new Error('Keep the request to one equipment modifier.');
-    if(/\b(?:optimal|optimi[sz]e|best|maximi[sz]e)\b/i.test(request)) throw new Error('Choosing optimal weapon stats is not available yet. Forge can calculate a specific modifier change with PoB2. Try “Change crossbow +2 to +4 proj skills”, or compare a complete replacement item through the Optimizer.');
     const slotPattern='(left ring|right ring|body armour|body armor|off hand|offhand|crossbow|weapon|helmet|helm|chest|gloves|boots|belt|amulet|ring)';
     const start='^(?:please )?(?:change|set|increase|raise|reduce|lower|adjust|update) (?:my |the )?'+slotPattern+' ';
     const number='([+-]?\\d+(?:\\.\\d+)?%?)';
@@ -183,6 +237,8 @@
     el('reset').disabled=busy||!changed.length;
     el('preview').disabled=busy;
     el('try').disabled=busy;
+    el('cancel-search').hidden=!optimizing;
+    el('keep-defences').disabled=busy;
     el('apply').disabled=busy||!proposal;
     el('proposal').hidden=!proposal;
     el('return-preview').hidden=!returned;
@@ -205,6 +261,28 @@
     const slot=el('slot').value;
     el('before-item').innerHTML=itemCard(state.baseline.gear?.[slot],state.candidate.gear?.[slot],'before',slot);
     el('after-item').innerHTML=itemCard(state.candidate.gear?.[slot],state.baseline.gear?.[slot],'after',slot);
+    renderTrade();
+  }
+  function renderTrade() {
+    const preview=proposal?.slot==='weapon'&&proposal.key===buildKey(state.candidate);
+    const build=preview?proposal.next:state?.candidate,item=build?.gear?.weapon;
+    const panel=el('trade');
+    if(!panel||!item){if(panel)panel.hidden=true;return;}
+    let target;
+    try{target=ForgeTrade.target(item,Number(build.character?.level));}catch{panel.hidden=true;return;}
+    panel.hidden=false;
+    el('trade-item').textContent=(preview?'Preview: ':'Candidate: ')+(item.name||item.typeLine);
+    el('trade-rules').textContent=`Target stats: ${target.base}, all ${target.filters.length} mapped explicit stats at their target values or better. Close matches: any rare crossbow, unchanged projectile skill levels when present, and at least 60% of the other mapped stats at 80% of their target values. Both searches require level ${target.level} or lower and include Instant Buyout and In Person priced listings, cheapest first. Added damage uses the average of its two endpoints. These are filter matches; DPS ranking requires PoB2.`;
+    el('trade-stats').innerHTML=target.filters.map(f=>'<li>'+esc(f.line)+'</li>').join('');
+    const options={league:el('trade-league').value,budget:el('trade-budget').value,currency:el('trade-currency').value};
+    let message='Instant Buyout + In Person · Searches use '+target.filters.length+' mapped explicit stats.'+(target.skipped.length?' '+target.skipped.length+' other explicit or tagged lines are not filtered.':'');
+    for(const mode of ['target','close']){
+      const link=el('trade-'+mode);link.removeAttribute('href');link.setAttribute('aria-disabled','true');link.tabIndex=-1;
+      if(busy||optimizing){message='Search links will update when the change is ready.';continue;}
+      try{link.href=ForgeTrade.search(item,Number(build.character?.level),{...options,mode}).url;link.setAttribute('aria-disabled','false');link.tabIndex=0;}
+      catch(error){message=error.message;}
+    }
+    el('trade-status').textContent=message;
   }
   async function start() {
     if(busy)return;
@@ -225,15 +303,19 @@
     invalidate();const token=revision,key=buildKey(state.candidate),request=el('request').value;
     busy=true;render();status('Checking the proposed equipment change…');
     try {
-      const proposed=interpret(request,state.candidate);
+      let proposed;
+      if(/^\s*Rarity:/i.test(request))proposed=replacementProposal(request.trim(),el('slot').value,request);
+      else {const optimization=optimizationRequest(request,state.candidate);proposed=optimization?await proposeOptimization(request,optimization,token):interpret(request,state.candidate);}
       await exported(proposed.next);
       if(token!==revision||request!==el('request').value||key!==buildKey(state.candidate))return;
       proposal={...proposed,key};
+      el('slot').value=proposed.slot;renderGear();
       el('proposal-slot').textContent=slots[proposed.slot];
       el('proposal-before').textContent=proposed.before;el('proposal-after').textContent=proposed.after;
-      status('Preview ready. Applying changes only the candidate. PoB2 calculates the impact; this does not validate item availability or equip requirements.');
-    }catch(e){status(e.message,true);}finally{busy=false;render();}
-    if(applyImmediately&&proposal)apply();
+      el('recommendation-note').textContent=proposed.note||'';el('recommendation-note').hidden=!proposed.note;
+      status(proposed.requiresReview?'Recommendation ready. Review the full item, then Apply & calculate.':'Preview ready. Applying changes only the candidate. PoB2 calculates the impact; this does not validate item availability or equip requirements.');
+    }catch(e){if(token===revision&&e.name!=='AbortError')status(e.message,true);}finally{if(token===revision){busy=false;optimizing=false;render();}}
+    if(applyImmediately&&proposal&&!proposal.requiresReview)apply();
   }
   function apply() {
     if(!proposal||busy||proposal.key!==buildKey(state.candidate))return;
@@ -376,7 +458,9 @@
     el('export').onclick=()=>prepareExport();el('export-original').onclick=()=>prepareExport('baseline');el('open').onclick=openCandidate;
     el('capture').onclick=captureCandidate;
     el('check-result').onclick=previewReturn;el('adopt-result').onclick=adoptResult;
-    el('request').oninput=()=>{proposal=null;el('proposal').hidden=true;el('apply').disabled=true;};
+    el('request').oninput=()=>{proposal=null;el('proposal').hidden=true;el('apply').disabled=true;if(optimizing){invalidate();busy=false;render();status('Request changed. Run the new request when ready.');}renderTrade();};
+    el('cancel-search').onclick=()=>{invalidate();busy=false;render();status('Search cancelled. Your equipment is unchanged.');};
+    el('keep-defences').onchange=()=>{proposal=null;el('proposal').hidden=true;el('apply').disabled=true;renderTrade();};
     el('result-code').oninput=el('result-side').onchange=()=>{invalidate();render();};
     el('copy').onclick=async()=>{try{await navigator.clipboard.writeText(el('export-code').value);status('PoB2 code copied. Paste it into PoB2.');}catch{el('export-code').select();status('Select and copy the code with Ctrl+C.');}};
     try {
@@ -386,6 +470,14 @@
         state=saved;state.history=state.history.slice(-10);
       }
     }catch{status('The saved comparison could not be restored. Your Optimizer build is unchanged; start a new comparison.',true);}
+    let tradePreferences={};try{tradePreferences=JSON.parse(localStorage.getItem(KEY+':trade')||'{}')||{};}catch{}
+    el('trade-league').value=tradePreferences.league||state?.candidate?.character?.league||currentLeague||'Forbidden Rites';
+    el('trade-budget').value=tradePreferences.budget||'';
+    el('trade-currency').value=['exalted','divine','chaos'].includes(tradePreferences.currency)?tradePreferences.currency:'exalted';
+    for(const field of ['trade-league','trade-budget','trade-currency'])el(field).oninput=()=>{
+      try{localStorage.setItem(KEY+':trade',JSON.stringify({league:el('trade-league').value,budget:el('trade-budget').value,currency:el('trade-currency').value}));}catch{}
+      renderTrade();
+    };
     render();
     if(state?.calculationSkills){el('skill').innerHTML=state.calculationSkills.map(s=>`<option value="${Number(s.index)}">${esc(s.name)}</option>`).join('');el('skill').value=String(state.calculationSkill);}
     void refreshCalculator().then(()=>calculateImpact());

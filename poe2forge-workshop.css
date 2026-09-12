@@ -51,10 +51,23 @@
 .workshop-item li.added {color:#b4ebd3;background:#26594b66;}
 .workshop-preview {background:#0e1820;border:1px solid #527e72;border-radius:8px;padding:16px;margin:18px 0 0;}
 .workshop-preview p {overflow-wrap:anywhere;}
+.workshop-preview span[id^="workshop-proposal-"],#workshop-recommendation-note {white-space:pre-line;}
+.workshop label.workshop-checkbox {display:flex;align-items:flex-start;gap:8px;font-size:11px;line-height:1.5;}
+.workshop-checkbox input {margin-top:2px;accent-color:#9fd6c1;}
 .workshop-preview .before {color:#e2b6a5;}
 .workshop-preview .after {color:#b9ead4;font-weight:600;}
 .workshop-preview button {margin-top:10px;}
 .workshop-hint {font-size:11px!important;color:#99aabd!important;}
+.workshop-trade {border-top:1px solid #36534f;margin-top:22px;padding-top:20px;}
+.workshop-trade-fields {display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,.65fr) minmax(80px,.65fr);gap:9px;margin-top:15px;}
+.workshop-trade input,.workshop-trade select {display:block;box-sizing:border-box;min-width:0;width:100%;margin-top:7px;padding:9px;border:1px solid #44536a;border-radius:6px;background:#111925;color:#e1e5ee;font:inherit;}
+.workshop-trade-link {display:inline-block;border:1px solid #6c9f8f;background:#1c3932;color:#c7eddd;padding:10px 12px;border-radius:7px;font-size:12px;text-decoration:none;font-weight:600;}
+.workshop-trade-link:hover {background:#2a5045;color:#fff;}
+.workshop-trade-link[aria-disabled="true"] {opacity:.4;cursor:not-allowed;}
+.workshop-trade :is(input,a):focus-visible {outline:2px solid #e2c28c;outline-offset:3px;}
+.workshop-trade details {font-size:12px;color:#b3c5cf;margin-top:12px;}
+.workshop-trade summary {cursor:pointer;}.workshop-trade ul {padding-left:20px;line-height:1.7;}
+@media(max-width:540px){.workshop-trade-fields{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.workshop-trade-fields>label:first-child{grid-column:1/-1}}
 .workshop-actions {justify-content:flex-start;margin-top:18px;gap:9px;}
 .workshop-table {width:100%;border-collapse:collapse;font-size:12px;}
 .workshop-table th {text-align:left;font-weight:500;color:#c2ccda;}

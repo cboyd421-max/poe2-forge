@@ -44,11 +44,62 @@ async function automatic(p,controls={}){
   });
   await p.locator('#workshop-calculate').click();await p.waitForFunction(()=>JSON.parse(localStorage.getItem('forge:workshop:v1')).candidateResult?.native);
 }
+async function recommendations(p,controls={}){
+  await p.route('**/pob2-optimize',async r=>{
+    const body=r.request().postDataJSON();controls.body=body;
+    const stats={CombinedDPS:12000,Life:1400,EnergyShield:200,TotalEHP:3000};
+    const payload={engine:{version:'fixture',identity:'fixture'},inputHash:createHash('sha256').update(body.candidateCode.replace(/\s/g,'')).digest('hex'),stats,skill:'Explosive Grenade',skillGroup:body.skillGroup,level:body.level,keepDefences:body.keepDefences,evaluated:80,baseName:'Twin Crossbow',itemLevel:65,candidates:[{itemText:crossbowItem.replace('+2 to Level of all Projectile Skills','+5 to Level of all Projectile Skills'),requiredLevel:60,stats:{...stats,CombinedDPS:15000}}]};
+    if(controls.wrongHash)payload.inputHash='wrong';if(controls.wrongLevel)payload.candidates[0].requiredLevel=70;if(controls.lowerDefences)payload.candidates[0].stats.Life=1300;
+    if(controls.empty)payload.candidates=[];
+    if(controls.delay)await new Promise(resolve=>controls.release=resolve);
+    try{await r.fulfill({json:payload});}catch{}
+  });
+}
 (async()=>{
   server=http.createServer((req,res)=>{const rel=new URL(req.url,'http://fixture').pathname.replace(/^\/poe2-forge\//,'');if(!/^[\w.-]+$/.test(rel)&&!/^icons\/[\w.-]+$/.test(rel)){res.writeHead(404).end();return;}const file=path.join(root,rel);if(!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404).end();return;}const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.webp':'image/webp'};res.writeHead(200,{'Content-Type':mime[path.extname(file)]||'text/plain'});fs.createReadStream(file).pipe(res);});
   await new Promise(r=>server.listen(0,'127.0.0.1',r));base='http://127.0.0.1:'+server.address().port;
   browser=await chromium.launch({headless:true,...(process.env.FORGE_TEST_BROWSER?{executablePath:process.env.FORGE_TEST_BROWSER}:{})});
   await test('Empty workspace guides import and cannot start without a build',async p=>{await p.getByRole('button',{name:'Build Workshop',exact:true}).click();assert.ok(await p.locator('#workshop-start').isDisabled());assert.ok(await p.locator('#workshop-empty').isVisible());});
+  await test('Trade links work offline, preserve the build, and contain target stats and a price cap',async p=>{
+    await setup(p,crossbowXml);const before=await snapshot(p);
+    assert.equal(await p.locator('#workshop-trade-league').inputValue(),'Forbidden Rites');await p.locator('#workshop-trade-budget').fill('25');await p.locator('#workshop-trade-currency').selectOption('exalted');
+    const link=p.locator('#workshop-trade-target'),url=new URL(await link.getAttribute('href')),q=JSON.parse(url.searchParams.get('q')).query;
+    assert.equal(url.origin,'https://www.pathofexile.com');assert.equal(decodeURIComponent(url.pathname.split('/').at(-1)),'Forbidden Rites');assert.equal(q.status.option,'available');assert.equal(q.type,'Twin Crossbow');assert.equal(q.filters.req_filters.filters.lvl.max,62);
+    assert.deepEqual(q.filters.trade_filters.filters.price,{max:25,option:'exalted'});assert.equal(q.stats[0].filters.find(f=>f.id==='explicit.stat_1202301673').value.min,2);
+    assert.equal(q.stats[0].filters.find(f=>f.id==='explicit.stat_1509134228').value.min,130);assert.match(await link.getAttribute('rel'),/noopener/);assert.equal(await link.getAttribute('target'),'_blank');
+    await p.context().route('https://www.pathofexile.com/**',r=>r.fulfill({contentType:'text/html',body:'<p>Offline trade navigation fixture</p>'}));
+    const [popup]=await Promise.all([p.waitForEvent('popup'),link.click()]);await popup.waitForLoadState();assert.equal(popup.url(),url.href);assert.equal(await popup.evaluate(()=>window.opener),null);await popup.close();
+    assert.deepEqual(await snapshot(p),before);
+  });
+  await test('Trade preview, apply, undo and request edits always point to the correct crossbow',async p=>{
+    await setup(p,crossbowXml);
+    const projectile=async()=>JSON.parse(new URL(await p.locator('#workshop-trade-target').getAttribute('href')).searchParams.get('q')).query.stats[0].filters.find(f=>f.id==='explicit.stat_1202301673').value.min;
+    await p.locator('#workshop-request').fill('Change crossbow +2 to +4 proj skills');await p.locator('#workshop-preview').click();await p.locator('#workshop-proposal').waitFor();
+    assert.equal(await projectile(),4);assert.match(await p.locator('#workshop-trade-item').innerText(),/^Preview:/);
+    await p.locator('#workshop-request').fill('Change crossbow +2 to +5 proj skills');assert.equal(await projectile(),2);assert.match(await p.locator('#workshop-trade-item').innerText(),/^Candidate:/);
+    await p.locator('#workshop-preview').click();await p.locator('#workshop-proposal').waitFor();await p.locator('#workshop-apply').click();assert.equal(await projectile(),5);
+    await p.locator('#workshop-undo').click();assert.equal(await projectile(),2);
+  });
+  await test('Optimized trade target is searchable before applying and remains after reload',async p=>{
+    await setup(p,crossbowXml);await automatic(p);await recommendations(p);
+    await p.locator('#workshop-request').fill('Optimize my crossbow for DPS');await p.locator('#workshop-try').click();await p.locator('#workshop-proposal').waitFor();
+    const query=async()=>JSON.parse(new URL(await p.locator('#workshop-trade-close').getAttribute('href')).searchParams.get('q')).query;
+    assert.equal((await query()).stats[0].filters[0].value.min,5);assert.equal((await snapshot(p)).candidate.gear.weapon.mods.includes('+2 to Level of all Projectile Skills'),true);
+    await p.locator('#workshop-apply').click();await p.waitForFunction(()=>JSON.parse(localStorage.getItem('forge:workshop:v1')).candidateResult?.native);
+    await p.reload();await p.getByRole('button',{name:'Build Workshop',exact:true}).click();assert.equal((await query()).stats[0].filters[0].value.min,5);
+  });
+  await test('Trade form validates league and budget, clears price caps, and remembers preferences',async p=>{
+    await setup(p,crossbowXml);await p.locator('#workshop-trade-league').fill('');assert.equal(await p.locator('#workshop-trade-target').getAttribute('href'),null);
+    await p.locator('#workshop-trade-league').fill('Hardcore Test');await p.locator('#workshop-trade-budget').fill('-3');assert.equal(await p.locator('#workshop-trade-close').getAttribute('href'),null);assert.match(await p.locator('#workshop-trade-status').innerText(),/positive/);
+    await p.locator('#workshop-trade-budget').fill('2.5');await p.locator('#workshop-trade-currency').selectOption('divine');await p.reload();await p.getByRole('button',{name:'Build Workshop',exact:true}).click();
+    assert.equal(await p.locator('#workshop-trade-league').inputValue(),'Hardcore Test');assert.equal(await p.locator('#workshop-trade-budget').inputValue(),'2.5');assert.equal(await p.locator('#workshop-trade-currency').inputValue(),'divine');
+    await p.locator('#workshop-trade-budget').fill('');const q=JSON.parse(new URL(await p.locator('#workshop-trade-target').getAttribute('href')).searchParams.get('q'));assert.equal(q.query.filters.trade_filters.filters.price,undefined);
+  });
+  await test('Trade controls fit a narrow screen and remain absent for unsupported equipment',async p=>{
+    await setup(p);assert.ok(await p.locator('#workshop-trade').isHidden());await setup(p,crossbowXml);await p.setViewportSize({width:390,height:1000});
+    assert.ok(await p.locator('#workshop-trade').isVisible());assert.ok(await p.evaluate(()=>{const el=document.querySelector('.workshop');return el.scrollWidth<=el.clientWidth+1;}));
+    if(process.env.FORGE_TEST_OUTPUT){await p.locator('#workshop-trade').scrollIntoViewIfNeeded();await p.screenshot({path:path.join(process.env.FORGE_TEST_OUTPUT,'trade-mobile.png')});await p.setViewportSize({width:1440,height:1100});await p.locator('#workshop-trade').scrollIntoViewIfNeeded();await p.screenshot({path:path.join(process.env.FORGE_TEST_OUTPUT,'trade-desktop.png')});}
+  });
   await test('Preview leaves original, candidate, Optimizer and guide untouched; apply changes only candidate',async p=>{
     await setup(p);await p.evaluate(()=>localStorage.setItem('forge:plannerGuide','synthetic guide sentinel'));
     const before=await snapshot(p),optimizer=await p.evaluate(()=>JSON.stringify(currentBuild));
@@ -94,12 +145,40 @@ async function automatic(p,controls={}){
       await p.locator('#workshop-request').fill(request);await p.locator('#workshop-try').click();await rejected(p,pattern);assert.deepEqual(await snapshot(p),before);
     }
   });
-  await test('Optimal DPS requests explain the current limit without inventing a weapon or changing results',async p=>{
-    await setup(p,crossbowXml);await automatic(p);const before=await snapshot(p);
+  await test('Build-aware optimization previews a measured target and applies it only after review',async p=>{
+    await setup(p,crossbowXml);await automatic(p);const controls={};await recommendations(p,controls);const before=await snapshot(p);
     for(const request of ['Change crossbow to include optimal dps stats for level 62 character','Optimize my crossbow for DPS','Give my crossbow the best DPS stats']){
-      await p.locator('#workshop-request').fill(request);await p.locator('#workshop-try').click();await rejected(p,/Choosing optimal weapon stats is not available yet/);assert.deepEqual(await snapshot(p),before);
+      await p.locator('#workshop-request').fill(request);await p.locator('#workshop-try').click();await p.locator('#workshop-proposal').waitFor();assert.deepEqual(await snapshot(p),before);
+      assert.match(await p.locator('#workshop-recommendation-note').innerText(),/80 tested combinations/);assert.equal(controls.body.level,62);assert.equal(controls.body.keepDefences,true);assert.equal(controls.body.skillGroup,1);
     }
-    assert.match(await p.locator('#workshop-request-help').innerText(),/choosing an optimal item is not available yet/);
+    if(process.env.FORGE_TEST_OUTPUT){
+      await p.evaluate(()=>document.getElementById('toast').classList.remove('show'));await p.locator('#workshop-proposal').scrollIntoViewIfNeeded();await p.screenshot({path:path.join(process.env.FORGE_TEST_OUTPUT,'optimization-preview-desktop.png')});
+      await p.setViewportSize({width:390,height:1000});assert.ok(await p.evaluate(()=>{const el=document.querySelector('.workshop');return el.scrollWidth<=el.clientWidth+1;}));await p.locator('#workshop-proposal').scrollIntoViewIfNeeded();await p.screenshot({path:path.join(process.env.FORGE_TEST_OUTPUT,'optimization-preview-mobile.png')});await p.setViewportSize({width:1440,height:1100});
+    }
+    await p.locator('#workshop-apply').click();await p.waitForFunction(()=>JSON.parse(localStorage.getItem('forge:workshop:v1')).candidateResult?.stats.CombinedDPS===15000);
+    const after=await snapshot(p);assert.deepEqual(after.baseline,before.baseline);assert.deepEqual(after.candidate.gear.amulet,before.candidate.gear.amulet);assert.match(after.candidate.gear.weapon.pobItemText,/\+5 to Level/);
+    await p.locator('#workshop-undo').click();await p.waitForFunction(()=>JSON.parse(localStorage.getItem('forge:workshop:v1')).candidateResult?.stats.CombinedDPS===12000);assert.deepEqual((await snapshot(p)).candidate.gear,before.candidate.gear);
+  });
+  await test('Optimization rejects mismatched hashes, unavailable levels and reduced protected defences',async p=>{
+    await setup(p,crossbowXml);await automatic(p);const controls={};await recommendations(p,controls);const before=await snapshot(p);
+    for(const flag of ['wrongHash','wrongLevel','lowerDefences','empty']){
+      controls[flag]=true;await p.locator('#workshop-request').fill('Optimize my crossbow for DPS');await p.locator('#workshop-try').click();await rejected(p,/does not match|level check|protected defence|No DPS improvement/);assert.deepEqual(await snapshot(p),before);controls[flag]=false;
+    }
+    for(const request of ['Optimize my crossbow for DPS for level 80 character','Optimize my crossbow for DPS with a budget of 10 divine','Optimize my crossbow for DPS and change my amulet']){
+      await p.locator('#workshop-request').fill(request);await p.locator('#workshop-try').click();await rejected(p,/imported level|not supported yet/);assert.deepEqual(await snapshot(p),before);
+    }
+  });
+  await test('Cancel and changed requests prevent a delayed recommendation from being applied',async p=>{
+    await setup(p,crossbowXml);await automatic(p);const controls={delay:true};await recommendations(p,controls);const before=await snapshot(p);
+    await p.locator('#workshop-request').fill('Optimize my crossbow for DPS');await p.locator('#workshop-try').click();while(!controls.release)await new Promise(r=>setTimeout(r,10));
+    await p.locator('#workshop-cancel-search').click();controls.release();await rejected(p,/cancelled/);assert.deepEqual(await snapshot(p),before);
+    controls.release=null;await p.locator('#workshop-try').click();while(!controls.release)await new Promise(r=>setTimeout(r,10));await p.locator('#workshop-request').fill('Set my amulet life to +90');controls.release();await p.waitForFunction(()=>!document.getElementById('workshop-preview').disabled);assert.ok(await p.locator('#workshop-proposal').isHidden());assert.deepEqual(await snapshot(p),before);
+  });
+  await test('Complete crossbow text is ingested into a review and preserves the rest of the build',async p=>{
+    await setup(p,crossbowXml);await p.locator('#workshop-slot').selectOption('weapon');const before=await snapshot(p);
+    await p.locator('#workshop-request').fill(crossbowItem.replace('130% increased Physical Damage','160% increased Physical Damage'));await p.locator('#workshop-try').click();await p.locator('#workshop-proposal').waitFor();assert.deepEqual(await snapshot(p),before);
+    await p.locator('#workshop-apply').click();const after=await snapshot(p);assert.deepEqual(after.baseline,before.baseline);assert.deepEqual(after.candidate.gear.amulet,before.candidate.gear.amulet);assert.match(await exportCandidate(p),/160% increased Physical Damage/);
+    await p.locator('#workshop-request').fill('Rarity: RARE\nIncomplete crossbow');await p.locator('#workshop-try').click();await rejected(p,/complete item text/);assert.deepEqual(await snapshot(p),after);
   });
   await test('Duplicate numeric matches require a modifier name; implicit edits update both arrays',async p=>{
     await setup(p,xml.replace('+60 to maximum Life','+2 to maximum Life'));

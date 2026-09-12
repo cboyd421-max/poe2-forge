@@ -2865,12 +2865,26 @@ input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
         </div>
         <div>
           <section class="workshop-card">
-            <div class="workshop-card-head"><h2>Try a specific stat change</h2><span class="workshop-eyebrow">Original preserved</span></div>
-            <label for="workshop-request">Which item's stat and value would you like to change?</label>
-            <textarea id="workshop-request" maxlength="400" placeholder="Change crossbow +2 to +4 proj skills" spellcheck="false" aria-describedby="workshop-request-help"></textarea>
-            <div class="workshop-actions"><button id="workshop-try" class="primary">Try change</button><button id="workshop-preview" class="quiet">Preview only</button></div>
-            <p class="workshop-hint" id="workshop-request-help">Choose one existing modifier and its new value: projectile skill levels, life, resistances, attributes, speed, or damage. Forge calculates the impact; choosing an optimal item is not available yet. For a complete replacement item, use the Optimizer's gear editor.</p>
-            <div id="workshop-proposal" class="workshop-preview" hidden><span id="workshop-proposal-slot" class="workshop-eyebrow"></span><p class="before">Before: <span id="workshop-proposal-before"></span></p><p class="after">After: <span id="workshop-proposal-after"></span></p><button id="workshop-apply" class="primary">Apply &amp; calculate</button></div>
+            <div class="workshop-card-head"><h2>Describe an upgrade</h2><span class="workshop-eyebrow">Original preserved</span></div>
+            <label for="workshop-request">Ask for better crossbow stats, change one modifier, or paste complete crossbow item text.</label>
+            <textarea id="workshop-request" maxlength="30000" placeholder="Optimize my crossbow for DPS" spellcheck="false" aria-describedby="workshop-request-help"></textarea>
+            <label class="workshop-checkbox"><input type="checkbox" id="workshop-keep-defences" checked> Keep current life, energy shield, effective hit pool and resistances when recommending stats</label>
+            <div class="workshop-actions"><button id="workshop-try" class="primary">Try change</button><button id="workshop-preview" class="quiet">Preview only</button><button id="workshop-cancel-search" class="quiet" hidden>Cancel search</button></div>
+            <p class="workshop-hint" id="workshop-request-help">“Optimize my crossbow for DPS” tests rare crossbow stat combinations using your build, selected skill, level, current base and item level. Review the proposed item before applying it. “Change crossbow +2 to +4 proj skills” still changes one modifier. For pasted item text, select Weapon under Equipment comparison.</p>
+            <div id="workshop-proposal" class="workshop-preview" hidden><span id="workshop-proposal-slot" class="workshop-eyebrow"></span><p id="workshop-recommendation-note" hidden></p><p class="before">Before: <span id="workshop-proposal-before"></span></p><p class="after">After: <span id="workshop-proposal-after"></span></p><button id="workshop-apply" class="primary">Apply &amp; calculate</button></div>
+            <div id="workshop-trade" class="workshop-trade" hidden>
+              <span class="workshop-eyebrow">Find it on trade</span>
+              <h3 id="workshop-trade-item"></h3>
+              <div class="workshop-trade-fields">
+                <label>League<input id="workshop-trade-league" type="text" maxlength="100" placeholder="Your current league" autocomplete="off"></label>
+                <label>Maximum price<input id="workshop-trade-budget" type="number" min="0.01" step="any" placeholder="No limit"></label>
+                <label>Currency<select id="workshop-trade-currency"><option value="exalted">Exalted</option><option value="divine">Divine</option><option value="chaos">Chaos</option></select></label>
+              </div>
+              <div class="workshop-actions"><a id="workshop-trade-target" class="workshop-trade-link" target="_blank" rel="noopener noreferrer">Search target stats ↗</a><a id="workshop-trade-close" class="workshop-trade-link" target="_blank" rel="noopener noreferrer">Search close matches ↗</a></div>
+              <p id="workshop-trade-status" aria-live="polite"></p>
+              <details><summary>What the searches match</summary><p id="workshop-trade-rules"></p><ul id="workshop-trade-stats"></ul></details>
+              <p class="workshop-hint">Opens the official trade site; you may need to sign in there. Check your league above. Matching stats do not guarantee the same DPS or usable attribute requirements. Runes, quality and other modifiers can differ. To compare a listing before buying, copy it into PoB2's item editor, then paste its complete PoB2 item text into Describe an upgrade with Weapon selected.</p>
+            </div>
           </section>
           <section class="workshop-card">
             <h2>Automatic calculation</h2>
@@ -5673,7 +5687,7 @@ function sendPobToOptimizer() {
   activeSlot = null;
   setCurrentBuild(lastDecodedBuild);
   toast('Build sent to Optimizer · scanning ready', 'ok');
-  setTimeout(() => switchTab('optimizer'), 400);
+  switchTab('optimizer');
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -5868,7 +5882,7 @@ async function loadGalleryBuild(id) {
     allResults = []; filteredResults = []; selectedItem = null; activeSlot = null;
     setCurrentBuild(build);
     toast(`${entry.name} loaded · opening Optimizer`, 'ok');
-    setTimeout(() => switchTab('optimizer'), 500);
+    switchTab('optimizer');
   } catch (e) {
     toast('Decode failed: ' + (e.message || e), 'err');
   }
@@ -6584,6 +6598,7 @@ function init() {
 
 init();
 </script>
+<script src="poe2forge-trade.js"></script>
 <script src="poe2forge-workshop.js"></script>
 
 <div style="position:fixed;bottom:6px;left:12px;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.5px;color:#5a5040;z-index:60;pointer-events:none">This product isn't affiliated with or endorsed by Grinding Gear Games in any way.</div>
