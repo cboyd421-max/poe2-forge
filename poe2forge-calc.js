@@ -20,7 +20,7 @@ function discover(env=process.env){
     return {available:true,pob,python,version,identity:hash(manifest)};
   }catch{return {available:false,reason:'PoB2 installation metadata is missing. Finish its installation first.'};}
 }
-function runNative(config,xml,skillGroup,signal,root){
+function runNative(config,xml,skillGroup,signal,root,optimization=null){
   return new Promise((resolve,reject)=>{
     const childEnv={};
     for(const key of ['SystemRoot','WINDIR','TEMP','TMP'])if(process.env[key])childEnv[key]=process.env[key];
@@ -28,7 +28,7 @@ function runNative(config,xml,skillGroup,signal,root){
     let output='',errors='',finished=false;
     const done=(error,value)=>{if(finished)return;finished=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);error?reject(error):resolve(value);};
     const abort=()=>{child.kill();done(new Error('Calculation cancelled.'));};
-    const timer=setTimeout(()=>{child.kill();done(new Error('PoB2 calculation timed out. Try again or use the manual tools.'));},20000);
+    const timer=setTimeout(()=>{child.kill();done(new Error('PoB2 calculation timed out. Try again or use the manual tools.'));},optimization?90000:20000);
     signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
     child.on('error',()=>done(new Error('Could not start the local PoB2 calculator. Check the Python and PoB2 paths.')));
     child.stdout.on('data',data=>{output+=data.toString('utf8');if(output.length>1000000){child.kill();done(new Error('Calculator output exceeded its limit.'));}});
@@ -40,10 +40,11 @@ function runNative(config,xml,skillGroup,signal,root){
         const result=JSON.parse(output);
         if(code!==0||result.error)throw new Error(result.error||'PoB2 calculation failed.');
         if(!result.stats||!Object.values(result.stats).every(Number.isFinite)||!Number.isInteger(result.skillGroup))throw new Error('Invalid calculator result.');
+        if(optimization&&(!Array.isArray(result.candidates)||result.candidates.length>3))throw new Error('Invalid optimization result.');
         done(null,result);
       }catch(error){done(new Error(output.trim().startsWith('{')?error.message:'The local calculator could not load this build. '+errors.slice(0,400)));}
     });
-    child.stdin.end(JSON.stringify({xml,skillGroup}));
+    child.stdin.end(JSON.stringify({xml,skillGroup,optimization}));
   });
 }
 function decode(code){
@@ -81,15 +82,26 @@ function createCalculator({port,root=__dirname,configuration=()=>discover(),work
     if(!current.available||current.identity!==config.identity)throw new Error('PoB2 updated during calculation. Calculate again with the new version.');
     return result;
   }
+  async function optimize(body,signal){
+    const config=configuration();if(!config.available)throw new Error(config.reason);
+    if(!Number.isInteger(body.skillGroup)||body.skillGroup<1||body.skillGroup>200)throw new Error('Choose the skill to optimize first.');
+    if(body.slot!=='weapon'||!Number.isInteger(body.level)||body.level<1||body.level>100||typeof body.keepDefences!=='boolean')throw new Error('Invalid optimization constraints.');
+    const input=decode(body.candidateCode),options={slot:'weapon',level:body.level,keepDefences:body.keepDefences};
+    const key=hash('optimize-v1\n'+config.identity+'\n'+body.skillGroup+'\n'+JSON.stringify(options)+'\n'+input.xml);
+    let value=cache.get(key);
+    if(!value){value=await worker(config,input.xml,body.skillGroup,signal,root,options);if(signal.aborted)throw new Error('Optimization cancelled.');cache.set(key,value);while(cache.size>16)cache.delete(cache.keys().next().value);}
+    const current=configuration();if(!current.available||current.identity!==config.identity)throw new Error('PoB2 updated during optimization. Try again.');
+    return {...value,engine:{version:config.version,identity:config.identity},inputHash:input.codeHash};
+  }
   function handle(req,res,pathname){
-    if(!['/pob2-calculator','/pob2-calculate'].includes(pathname))return false;
+    if(!['/pob2-calculator','/pob2-calculate','/pob2-optimize'].includes(pathname))return false;
     const trusted=origins.has(req.headers.origin);
     if(!hosts.has(req.headers.host)||(req.headers.origin&&!trusted)||(req.headers['sec-fetch-site']==='cross-site'&&!trusted)) {send(res,403,{error:'Calculator accepts only the local Forge page.'});return true;}
     if(trusted){res.setHeader('Access-Control-Allow-Origin',req.headers.origin);res.setHeader('Vary','Origin');}
     if(pathname==='/pob2-calculator'&&req.method==='GET'){
       const config=configuration();send(res,200,config.available?{available:true,version:config.version,identity:config.identity}:{available:false,reason:config.reason});return true;
     }
-    if(pathname!=='/pob2-calculate'||req.method!=='POST'){send(res,405,{error:'Method not allowed.'});return true;}
+    if(!['/pob2-calculate','/pob2-optimize'].includes(pathname)||req.method!=='POST'){send(res,405,{error:'Method not allowed.'});return true;}
     if(!trusted){send(res,403,{error:'Calculation requires a trusted browser Origin.'});return true;}
     if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||'')){send(res,415,{error:'JSON input required.'});return true;}
     if(occupied){send(res,429,{error:'A calculation is finishing. Try again in a moment.'});return true;}
@@ -104,7 +116,7 @@ function createCalculator({port,root=__dirname,configuration=()=>discover(),work
     res.on('close',()=>{if(!res.writableEnded)controller.abort();});
     req.on('end',async()=>{
       clearTimeout(receiveTimer);if(ended)return;ended=true;
-      try{const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!body||typeof body!=='object')throw new Error('Invalid request.');const result=await calculate(body,controller.signal);send(res,200,result);}
+      try{const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!body||typeof body!=='object')throw new Error('Invalid request.');const result=await (pathname==='/pob2-optimize'?optimize:calculate)(body,controller.signal);send(res,200,result);}
       catch(error){send(res,400,{error:error.message});}finally{chunks=[];release();}
     });
     return true;

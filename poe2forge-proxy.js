@@ -325,6 +325,7 @@ const STATIC_FILES = {
   'poe2forge-planner.js':       'application/javascript; charset=utf-8',
   'poe2forge-planner-data.json':'application/json; charset=utf-8',
   'poe2forge-workshop.js':     'application/javascript; charset=utf-8',
+  'poe2forge-trade.js':        'application/javascript; charset=utf-8',
   'poe2forge-workshop.css':    'text/css; charset=utf-8',
   'poe2db-base-types.json':     'application/json; charset=utf-8',
   'poe2db-skills.json':         'application/json; charset=utf-8',
@@ -387,7 +388,7 @@ function handleRequest(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const reqPath = url.pathname;
 
-  if (reqPath === '/pob2-calculator' || reqPath === '/pob2-calculate') {
+  if (reqPath === '/pob2-calculator' || reqPath === '/pob2-calculate' || reqPath === '/pob2-optimize') {
     localCalculator ||= require('./poe2forge-calc').createCalculator({port:PORT});
     localCalculator.handle(req,res,reqPath);
     return;

@@ -72,4 +72,13 @@ for index, group in ipairs(build.skillsTab.socketGroupList) do
     end
 end
 local group = build.skillsTab.socketGroupList[build.mainSocketGroup]
+if _FORGE_OPTIMIZE and _FORGE_OPTIMIZE ~= '' then
+    local optimize = dofile(_FORGE_HELPERS .. '/optimize.lua')
+    local result = optimize(build, require('dkjson').decode(_FORGE_OPTIMIZE), keys)
+    result.stats = stats
+    result.skill = group and skillName(group) or 'Default attack'
+    result.skillGroup = build.mainSocketGroup
+    result.version = launch.versionNumber
+    return require('dkjson').encode(result)
+end
 return require('dkjson').encode({version=launch.versionNumber,stats=stats,skill=group and skillName(group) or 'Default attack',skillGroup=build.mainSocketGroup,skills=skills,level=build.characterLevel})

@@ -34,5 +34,22 @@ function rawRequest(headers,body='{}'){return new Promise((resolve,reject)=>{con
     config={...config,identity:'slow-engine'};delay=true;const pending=request('/pob2-calculate');while(!release)await new Promise(r=>setTimeout(r,10));assert.equal((await request('/pob2-calculate')).status,429);delay=false;release();assert.equal((await pending).status,200);
   });
   await test('Unavailable engine gives an actionable response without spawning',async()=>{config={available:false,reason:'Install Python'};const before=calls,r=await request('/pob2-calculate');assert.equal(r.status,400);assert.match((await r.json()).error,/Install Python/);assert.equal(calls,before);});
+  await test('Optimization enforces the same Origin gate and explicit level, skill and defence constraints',async()=>{
+    config={available:true,version:'fixture',identity:'optimizer-engine'};const before=calls;
+    const body={candidateCode:encode(xml),slot:'weapon',level:62,skillGroup:1,keepDefences:true};
+    assert.equal((await request('/pob2-optimize',{body,headers:{Origin:'https://evil.invalid'}})).status,403);
+    assert.equal((await request('/pob2-optimize',{method:'GET'})).status,405);
+    for(const patch of [{slot:'amulet'},{level:101},{level:'62'},{skillGroup:null},{keepDefences:'yes'},{candidateCode:'invalid'}])assert.equal((await request('/pob2-optimize',{body:{...body,...patch}})).status,400);
+    assert.equal(calls,before);
+  });
+  await test('Optimization cache separates input, skill, constraints and ordinary calculations',async()=>{
+    const received=[];calculator=createCalculator({port:server.address().port,configuration:()=>config,worker:async(_c,source,skill,_signal,_root,options)=>{received.push({source,skill,options});return {stats:{CombinedDPS:100},skillGroup:skill,candidates:[],level:options?.level};}});
+    const body={candidateCode:encode(xml),slot:'weapon',level:62,skillGroup:1,keepDefences:true};
+    const r=await request('/pob2-optimize',{body});assert.equal(r.status,200);assert.match((await r.json()).inputHash,/^[a-f0-9]{64}$/);assert.deepEqual(received[0].options,{slot:'weapon',level:62,keepDefences:true});
+    await request('/pob2-optimize',{body});assert.equal(received.length,1);
+    await request('/pob2-optimize',{body:{...body,keepDefences:false}});assert.equal(received.length,2);
+    await request('/pob2-optimize',{body:{...body,skillGroup:2}});assert.equal(received.length,3);
+    await request('/pob2-calculate',{body:{baselineCode:encode(xml),candidateCode:encode(xml),skillGroup:1}});assert.equal(received.length,4);
+  });
   console.log(JSON.stringify({passed:results.filter(r=>r.status==='PASS').length,total:results.length,results},null,2));if(results.some(r=>r.status==='FAIL'))process.exitCode=1;
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>server?.close());

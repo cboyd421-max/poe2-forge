@@ -17,10 +17,10 @@ function request(url,headers={}) {
 }
 (async()=>{
   let checks=0;
-  for(const file of ['poe2forge-planner.js','poe2forge-planner-data.json','poe2forge-workshop.js','poe2forge-workshop.css']) {
+  for(const file of ['poe2forge-planner.js','poe2forge-planner-data.json','poe2forge-workshop.js','poe2forge-trade.js','poe2forge-workshop.css']) {
     const r=await request('/'+file);assert.equal(r.status,200);assert.equal(r.body,fs.readFileSync(path.join(root,file),'utf8'));assert.match(r.headers['content-type'],file.endsWith('.js')?/javascript/:file.endsWith('.css')?/css/:/json/);checks++;
   }
-  for(const file of ['poe2forge-proxy.js','poe2forge-calc.js','tools/pob2/worker.py','tools/pob2/calculate.lua','tests/game-planner.cjs','tools/build-planner-catalog.cjs','another.json','poe2forge-planner-data.json.bak']) {assert.equal((await request('/'+file)).status,404);checks++;}
+  for(const file of ['poe2forge-proxy.js','poe2forge-calc.js','tools/pob2/worker.py','tools/pob2/calculate.lua','tools/pob2/optimize.lua','tests/game-planner.cjs','tools/build-planner-catalog.cjs','another.json','poe2forge-planner-data.json.bak']) {assert.equal((await request('/'+file)).status,404);checks++;}
   for(const url of ['/.env','/.git/config','/%2e%2e%2fpoe2forge-planner.js']) {assert.equal((await request(url)).status,403);checks++;}
   assert.equal((await request('/poe2forge-planner.js',{host:'evil.example'})).status,403);checks++;
   assert.equal((await request('/poe2forge-planner-data.json',{origin:'https://evil.example'})).status,403);checks++;
